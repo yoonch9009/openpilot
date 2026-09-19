@@ -365,3 +365,34 @@ Carrot Vision에는 `carrot_settings.json` 카탈로그와 별도로 **AR 표시
 7. 나빠지거나 판단하기 어렵다면 즉시 이전 값 또는 기준 프로필로 복원합니다.
 
 조향과 가감속의 실제 조정 순서는 [튜닝 입문](https://github.com/ajouatom/openpilot/wiki/Guide-Tuning)을 참고하세요.
+
+## 이 개인 포크의 캐스퍼 기본값
+
+이 포크는 2022 캐스퍼용 개인 설정을 초기 기본값으로 사용합니다. 다른 차량의 범용 권장값이 아닙니다. 최초 설치 시 값이 없는 항목에 적용되며, 이후 사용자가 저장한 값은 일반 부팅 때 덮어쓰지 않습니다. 기본값 복원 기능을 사용하면 아래 값이 다시 적용됩니다.
+
+운전자 모니터링 꺼짐과 안전벨트 미착용 이벤트 생략도 소유자가 선택한 기본값에 포함됩니다. 벨트 옵션은 단순한 경고음 음소거가 아니며 차량 자체 벨트 경고를 끄지 않습니다.
+
+| 설정 | 기본값 |
+|---|---|
+| `CarSelected3` | `"Hyundai Casper 2023"` |
+| `HyundaiCameraSCC` | `1` |
+| `CanfdHDA2` | `0` |
+| `EnableRadarTracks` | `0` |
+| `AlwaysLateral` | `1` |
+| `LaneChangeNeedTorque` | `0` |
+| `LaneChangeBsd` | `1` |
+| `TrafficLightDetectMode` | `0` |
+| `MyDrivingMode` | `3` |
+| `LongitudinalPersonality` | `1` |
+| `IsLdwEnabled` | `false` |
+| `AutoNaviSpeedCtrlMode` | `2` |
+| `ShowCustomBrightness` | `0` |
+| `DisableDM` | `1` |
+| `AutoEngage` | `1` |
+| `MuteSeatbelt` | `1` |
+| `CruiseEcoControl` | `1` |
+| `AutoCurveSpeedFactor` | `110` |
+| `AutoCruiseControl` | `0` |
+| `SoftHoldOnCancel` | `false` |
+| `LanguageSetting` | `"ko"` |
+| `IsMetric` | `true` |

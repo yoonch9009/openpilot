@@ -1035,7 +1035,7 @@
       "cdescr": "为提高燃油效率临时提高目标速度",
       "min": 0,
       "max": 10,
-      "default": 2,
+      "default": 1,
       "unit": 1,
       "display_unit": "speedKph"
     },
@@ -1368,7 +1368,7 @@
       "cdescr": "数值越高，允许的横向加速度和弯道目标速度越低。根据距弯道的距离提前减速。",
       "min": 50,
       "max": 300,
-      "default": 100,
+      "default": 110,
       "unit": 5,
       "display_unit": "percent"
     },
@@ -1713,7 +1713,7 @@
       "cdescr": "0:巡航取消状态下禁用软驻车\n1:巡航取消状态下停车后允许软驻车",
       "min": 0,
       "max": 1,
-      "default": 0,
+      "default": false,
       "unit": 1
     },
     {
@@ -1763,7 +1763,7 @@
       "cdescr": "1: 仅转向, 2: 转向开启 + 巡航待机",
       "min": 0,
       "max": 2,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -1779,7 +1779,7 @@
       "cdescr": "即使巡航未激活，也允许横向控制。\nTesla 在实际静止时可以转向；低速移动时仍遵守最低转向速度限制。\n0: 关闭, 1: 开启",
       "min": 0,
       "max": 1,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -1958,7 +1958,7 @@
       "cdescr": "1. 禁用 DM, 2: + 开启 WebRTC, 需要重启",
       "min": 0,
       "max": 2,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -1990,7 +1990,7 @@
       "cdescr": "",
       "min": 0,
       "max": 1,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -2403,7 +2403,7 @@
       "cdescr": "0: BSD 检测 (允许转向力矩), 1: 阻止转向力矩, -1: 忽略 BSD",
       "min": -1,
       "max": 1,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -2585,7 +2585,7 @@
       "cdescr": "1: 纵向控制车辆, 2: 巡航状态同步 (CAN-FD 车辆), 3: 原厂巡航 (CANFD 纵向线束)",
       "min": 0,
       "max": 3,
-      "default": 0,
+      "default": 1,
       "unit": 1
     },
     {
@@ -3280,7 +3280,7 @@
       "cdescr": "0: 无, 1: 仅停止, 2: 停止和起步",
       "min": 0,
       "max": 2,
-      "default": 2,
+      "default": 0,
       "unit": 1
     },
     {
@@ -3606,7 +3606,7 @@
       "cdescr": "行车开始约10秒后的屏幕亮度比例\n0: 根据环境亮度自动调节\n100: 始终最大亮度",
       "min": 0,
       "max": 100,
-      "default": 100,
+      "default": 0,
       "unit": 5,
       "display_unit": "percent"
     },

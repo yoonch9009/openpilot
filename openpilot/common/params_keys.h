@@ -57,7 +57,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"InstallDate", {PERSISTENT, TIME}},
     {"IsDriverViewEnabled", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsEngaged", {PERSISTENT, BOOL}},
-    {"IsLdwEnabled", {PERSISTENT, BOOL}},
+    {"IsLdwEnabled", {PERSISTENT, BOOL, "0"}},
     {"IsMetric", {PERSISTENT, BOOL, "1"}},
     {"IsOffroad", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsOnroad", {PERSISTENT, BOOL}},
@@ -66,7 +66,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"IsTakingSnapshot", {CLEAR_ON_MANAGER_START, BOOL}},
     {"IsTestedBranch", {CLEAR_ON_MANAGER_START, BOOL}},
     {"JoystickDebugMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"LanguageSetting", {PERSISTENT, STRING, "en"}},
+    {"LanguageSetting", {PERSISTENT, STRING, "ko"}},
     {"LastAthenaPingTime", {CLEAR_ON_MANAGER_START, INT}},
     {"LastGPSPosition", {PERSISTENT, STRING}},
     {"LastManagerExitReason", {CLEAR_ON_MANAGER_START, STRING}},
@@ -84,7 +84,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"LocationFilterInitialState", {PERSISTENT, BYTES}},
     {"LateralManeuverMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
     {"LongitudinalManeuverMode", {CLEAR_ON_MANAGER_START | CLEAR_ON_OFFROAD_TRANSITION, BOOL}},
-    {"LongitudinalPersonality", {PERSISTENT, INT, std::to_string(static_cast<int>(cereal::LongitudinalPersonality::STANDARD))}},
+    {"LongitudinalPersonality", {PERSISTENT, INT, "1"}},
     {"NetworkMetered", {PERSISTENT, BOOL}},
     {"ObdMultiplexingChanged", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
     {"ObdMultiplexingEnabled", {CLEAR_ON_MANAGER_START | CLEAR_ON_ONROAD_TRANSITION, BOOL}},
@@ -162,7 +162,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"GMapKey", {PERSISTENT, STRING}},
     {"SearchInput", {PERSISTENT, INT}},
 
-    {"CarSelected3", {PERSISTENT, STRING, "MOCK"}},
+    {"CarSelected3", {PERSISTENT, STRING, "Hyundai Casper 2023"}},
     {"SupportedCars", {PERSISTENT, STRING}},
     {"SupportedCars_gm", {PERSISTENT, STRING}},
     {"SupportedCars_toyota", {PERSISTENT, STRING}},
@@ -185,7 +185,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"TimezoneName", {PERSISTENT, STRING, ""}},                // 로컬 타임존 IANA 이름 (예: "Asia/Seoul"), 앱/WiFi/GPS로 해석되면 기록
     {"TimezoneSource", {PERSISTENT, STRING, ""}},              // 타임존 출처 우선순위 추적 ("app" > "wifi" > "gps")
     {"CarrotTireTrajectory", {PERSISTENT, INT, "0"}},
-    {"ShowCustomBrightness", {PERSISTENT, INT, "100"}},
+    {"ShowCustomBrightness", {PERSISTENT, INT, "0"}},
     {"ShowModelView", {PERSISTENT, INT, "0"}},
     {"ShowCameraWithCluster", {PERSISTENT, INT, "0"}},
     {"ClusterHud", {PERSISTENT, INT, "0"}},
@@ -216,7 +216,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
 
     {"AutoCruiseControl", {PERSISTENT, INT, "0"}},
     {"SoftHoldOnCancel", {PERSISTENT, BOOL, "0"}},
-    {"CruiseEcoControl", {PERSISTENT, INT, "2"}},
+    {"CruiseEcoControl", {PERSISTENT, INT, "1"}},
     {"CarrotCruiseDecel", {PERSISTENT, INT, "-1"}},
     {"CarrotCruiseAtcDecel", {PERSISTENT, INT, "-1"}},
 
@@ -224,11 +224,11 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AutoGasCancelSpeed", {PERSISTENT, INT, "30"}},
     {"AutoGasSyncSpeed", {PERSISTENT, INT, "1"} },
     {"ApplyModelSpeed", {PERSISTENT, INT, "0"} },
-    {"AutoEngage", {PERSISTENT, INT, "0"}},
+    {"AutoEngage", {PERSISTENT, INT, "1"}},
     {"AlwaysLateral", {PERSISTENT, INT, "1"} },
     {"DisableMinSteerSpeed", {PERSISTENT, INT, "0"}},
     {"AutoCurveSpeedLowerLimit", {PERSISTENT, INT, "30"}},
-    {"AutoCurveSpeedFactor", {PERSISTENT, INT, "120"}},
+    {"AutoCurveSpeedFactor", {PERSISTENT, INT, "110"}},
 
     {"AutoTurnControl", {PERSISTENT, INT, "0"}},
     {"AutoTurnControlSpeedTurn", {PERSISTENT, INT, "20"}},
@@ -275,7 +275,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"PaddleMode", {PERSISTENT, INT, "0"}},
     {"MyDrivingMode", {PERSISTENT, INT, "3"}},
     {"MyDrivingModeAuto", {PERSISTENT, INT, "0"}},
-    {"TrafficLightDetectMode", {PERSISTENT, INT, "2"}},
+    {"TrafficLightDetectMode", {PERSISTENT, INT, "0"}},
 
     {"SteerActuatorDelay", {PERSISTENT, INT, "0"}},
     {"LatSmoothSec", {PERSISTENT, INT, "13"}},
@@ -306,7 +306,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"HotspotOnBoot", {PERSISTENT, INT, "0"}},
     {"SoftwareMenu", {PERSISTENT, INT, "1"}},
 
-    {"HyundaiCameraSCC", {PERSISTENT, INT, "0"}},
+    {"HyundaiCameraSCC", {PERSISTENT, INT, "1"}},
     {"FingerPrints", {PERSISTENT | CLEAR_ON_MANAGER_START, STRING}},
     {"IsLdwsCar", {PERSISTENT, INT, "0"}},
     {"CanfdHDA2", {PERSISTENT, INT, "0"}},
@@ -341,7 +341,7 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"AdjustLaneOffset", {PERSISTENT, INT, "0"}},
     {"LaneChangeNeedTorque", {PERSISTENT, INT, "0"}},
     {"LaneChangeDelay", {PERSISTENT, INT, "0"}},
-    {"LaneChangeBsd", {PERSISTENT, INT, "0"}},
+    {"LaneChangeBsd", {PERSISTENT, INT, "1"}},
     {"LaneLineCheck", {PERSISTENT, INT, "0"}},
     {"MaxAngleFrames", {PERSISTENT, INT, "89"}},
 
@@ -372,9 +372,9 @@ inline static std::unordered_map<std::string, ParamKeyAttributes> keys = {
     {"SpeedFromPCM", {PERSISTENT, INT, "2"}},
     {"MaxTimeOffroadMin", {PERSISTENT, INT, "60"}},
 
-    {"DisableDM", {PERSISTENT, INT, "0"}},
+    {"DisableDM", {PERSISTENT, INT, "1"}},
     {"MuteDoor", {PERSISTENT, INT, "0"}},
-    {"MuteSeatbelt", {PERSISTENT, INT, "0"}},
+    {"MuteSeatbelt", {PERSISTENT, INT, "1"}},
 
     {"CarrotException", {CLEAR_ON_MANAGER_START, STRING}},
     {"CarrotExceptionSent", {CLEAR_ON_MANAGER_START, BOOL}},

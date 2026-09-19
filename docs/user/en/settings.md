@@ -330,3 +330,34 @@ Check storage use for recording and network use, heat, and privacy before enabli
 7. Restore the previous value or baseline profile immediately if the result is worse or unclear.
 
 See the Wiki [Tuning introduction](https://github.com/ajouatom/openpilot/wiki/Guide-Tuning) for the recommended steering and longitudinal adjustment order.
+
+## Personal Casper defaults in this fork
+
+This personal fork uses the owner-selected 2022 Casper configuration as its defaults, not as general recommendations for other vehicles. Missing values are initialized on first installation; normal startup preserves saved user changes. Resetting a setting to its default reapplies the values below.
+
+The owner-selected defaults include disabled driver monitoring and suppression of the seatbelt-unlatched event. The seatbelt setting is more than audio muting and does not disable the vehicle’s own belt warning.
+
+| Setting | Default |
+|---|---|
+| `CarSelected3` | `"Hyundai Casper 2023"` |
+| `HyundaiCameraSCC` | `1` |
+| `CanfdHDA2` | `0` |
+| `EnableRadarTracks` | `0` |
+| `AlwaysLateral` | `1` |
+| `LaneChangeNeedTorque` | `0` |
+| `LaneChangeBsd` | `1` |
+| `TrafficLightDetectMode` | `0` |
+| `MyDrivingMode` | `3` |
+| `LongitudinalPersonality` | `1` |
+| `IsLdwEnabled` | `false` |
+| `AutoNaviSpeedCtrlMode` | `2` |
+| `ShowCustomBrightness` | `0` |
+| `DisableDM` | `1` |
+| `AutoEngage` | `1` |
+| `MuteSeatbelt` | `1` |
+| `CruiseEcoControl` | `1` |
+| `AutoCurveSpeedFactor` | `110` |
+| `AutoCruiseControl` | `0` |
+| `SoftHoldOnCancel` | `false` |
+| `LanguageSetting` | `"ko"` |
+| `IsMetric` | `true` |
