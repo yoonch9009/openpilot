@@ -48,6 +48,9 @@ class DictParams:
 def make_cp(brand="hyundai"):
   return SimpleNamespace(
     brand=brand,
+    carFingerprint="HYUNDAI_SONATA",
+    openpilotLongitudinalControl=True,
+    pcmCruise=False,
     longitudinalTuning=SimpleNamespace(
       kpBP=[0.0], kpV=[9.0], kiBP=[0.0], kiV=[9.0], kf=9.0,
     ),
