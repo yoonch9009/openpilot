@@ -353,7 +353,7 @@ The owner-selected defaults include disabled driver monitoring and suppression o
 | `AutoNaviSpeedCtrlMode` | `2` |
 | `ShowCustomBrightness` | `0` |
 | `DisableDM` | `1` |
-| `AutoEngage` | `1` |
+| `AutoEngage` | `2` |
 | `MuteSeatbelt` | `1` |
 | `CruiseEcoControl` | `1` |
 | `AutoCurveSpeedFactor` | `110` |

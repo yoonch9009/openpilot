@@ -388,7 +388,7 @@ Carrot Vision에는 `carrot_settings.json` 카탈로그와 별도로 **AR 표시
 | `AutoNaviSpeedCtrlMode` | `2` |
 | `ShowCustomBrightness` | `0` |
 | `DisableDM` | `1` |
-| `AutoEngage` | `1` |
+| `AutoEngage` | `2` |
 | `MuteSeatbelt` | `1` |
 | `CruiseEcoControl` | `1` |
 | `AutoCurveSpeedFactor` | `110` |
