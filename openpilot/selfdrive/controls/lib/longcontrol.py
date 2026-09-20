@@ -5,7 +5,6 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.params import Params
-from openpilot.selfdrive.controls.lib.following_stop import FollowingStop, MAX_SAMPLE_AGE
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -65,9 +64,6 @@ class LongControl:
                              (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              k_f=CP.longitudinalTuning.kf, rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
-    self.following_stop = FollowingStop()
-    self.following_stop_enabled = (CP.brand == "hyundai" and CP.carFingerprint == "HYUNDAI_CASPER" and
-                                   CP.openpilotLongitudinalControl and not CP.pcmCruise)
 
 
     self.params = Params()
@@ -104,26 +100,13 @@ class LongControl:
   def reset(self):
     self.pid.reset()
 
-  def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState,
-             *, radar_timestamp_ns=0, radar_age=float('inf'), radar_valid=False):
+  def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState):
 
     soft_hold_active = CS.softHoldActive > 0
     a_target_ff = long_plan.aTarget
     v_target_now = long_plan.vTargetNow
     j_target_now = long_plan.jTargetNow
     should_stop = long_plan.shouldStop
-    following_hold = False
-    if self.following_stop_enabled:
-      following_hold = self.following_stop.update(
-        active=active and not soft_hold_active,
-        driver_override=CS.brakePressed or CS.gasPressed or CS.gearShifter != car.CarState.GearShifter.drive,
-        standstill=CS.standstill, v_ego=CS.vEgo,
-        stopping=self.long_control_state == LongCtrlState.stopping,
-        should_stop=should_stop, following=long_plan.longitudinalPlanSource == 'lead0',
-        lead=radarState.leadOne, timestamp_ns=radar_timestamp_ns,
-        fresh=radar_valid and 0.0 <= radar_age <= MAX_SAMPLE_AGE and 0.0 <= t_since_plan <= MAX_SAMPLE_AGE,
-      )
-    should_stop = should_stop or following_hold
 
     self.readParamCount += 1
     if self.readParamCount >= 100:
@@ -151,10 +134,6 @@ class LongControl:
 
       if soft_hold_active:
         output_accel = self.CP.stopAccel
-
-      if following_hold:
-        # Retain stopping effort, and never suppress a stronger planned brake.
-        output_accel = min(output_accel, a_target_ff, self.stopping_accel)
 
       if output_accel > self.stopping_accel:
         output_accel = min(output_accel, 0.0)

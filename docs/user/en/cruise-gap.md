@@ -394,20 +394,3 @@ Related: [Understanding Settings](settings.md) · [Tuning introduction](https://
 When a previously confirmed moving front vehicle is leaving your path and vision has switched to a farther vehicle, ACC can gradually reduce the following-distance demand for the future period after its predicted departure. The radar track and its measured distance and speed remain available.
 
 The adjustment requires continuous measured outward motion and sufficient separation until the vehicle body clears the path. It affects only predictions after clearance plus 0.30 seconds, and is limited to half the selected time gap, at most 0.50 seconds or 8 m. Closer leadTwo vehicles, traffic stops, cruise limits, and the original collision-warning trajectory remain in the calculation. Loss of evidence cancels the adjustment; it does not operate during pedal override, in blended mode, or for stationary or strongly braking leads. See [radar behavior](radar.md).
-
-### Casper following-stop hold (this fork)
-
-This applies to `HYUNDAI_CASPER` with openpilot longitudinal control, the selection
-used for the 2022 Casper. After a completed following stop in D, a brief increase
-in planned speed does not release stopping. Following resumes after continuous
-lead motion and increasing separation are confirmed and the planner allows it.
-The initial implementation requires at least 0.5 seconds and 0.3 metres of gap growth.
-
-Lead loss or a changed track alone does not trigger departure. After uncertainty,
-a stationary lead must be reacquired consistently; if it is already moving,
-automatic departure may be delayed or require driver intervention. Existing pedal,
-CANCEL and disengagement behavior remains in force. This does not enable Auto Cruise
-or EPB and does not apply to other vehicles.
-
-This is a new control change in this fork. Casper vehicle validation is outstanding;
-passing unit tests does not establish safe brake holding or departure behavior.

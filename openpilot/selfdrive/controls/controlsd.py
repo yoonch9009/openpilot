@@ -172,14 +172,7 @@ class Controls:
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     t_since_plan = (self.sm.frame - self.sm.recv_frame['longitudinalPlan']) * DT_CTRL
-    accel, aTarget, jerk = self.LoC.update(
-      CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan, self.sm['radarState'],
-      radar_timestamp_ns=self.sm.logMonoTime['radarState'],
-      radar_age=(self.sm.frame - self.sm.recv_frame['radarState']) * DT_CTRL,
-      radar_valid=self.sm.valid['radarState'] and self.sm.alive['radarState'],
-    )
-    if self.LoC.following_stop_enabled:
-      actuators.longControlState = self.LoC.long_control_state
+    accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan, self.sm['radarState'])
     actuators.accel = float(accel)
     actuators.aTarget = float(aTarget)
     actuators.jerk = float(jerk)
