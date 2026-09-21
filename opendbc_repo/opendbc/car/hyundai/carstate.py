@@ -56,6 +56,15 @@ LEGACY_CRUISE_BUTTON_ALT_ADDR = 0x3EF
 LEGACY_LFA_BUTTON_ALT_ADDR = 0x416
 
 
+def is_legacy_brake_hold_active(car_fingerprint, openpilot_longitudinal_control: bool, avh_lamp: int) -> bool:
+  # The tested gasoline Casper has no OEM Auto Hold / stock stop-and-go SCC.
+  # While openpilot longitudinal is active, do not let AVH_LAMP alone become an
+  # OEM hold interlock: that would force SCC ACCMode off and can block departure.
+  if car_fingerprint == CAR.HYUNDAI_CASPER and openpilot_longitudinal_control:
+    return False
+  return avh_lamp == 2
+
+
 def is_canfd_avh_active(avh_state: int) -> bool:
   return avh_state in (1, 2)
 
@@ -502,7 +511,8 @@ class CarState(CarStateBase):
     ret.brake = 0
     if not self.CP.flags & HyundaiFlags.CC_ONLY_CAR:
       ret.brakePressed = cp.vl["TCS13"]["DriverOverride"] == 2  # 2 includes regen braking by user on HEV/EV
-      ret.brakeHoldActive = cp.vl["TCS15"]["AVH_LAMP"] == 2  # 0 OFF, 1 ERROR, 2 ACTIVE, 3 READY
+      ret.brakeHoldActive = is_legacy_brake_hold_active(
+        self.CP.carFingerprint, self.CP.openpilotLongitudinalControl, cp.vl["TCS15"]["AVH_LAMP"])
       ret.parkingBrake = cp.vl["TCS13"]["PBRAKE_ACT"] == 1
       ret.espDisabled = cp.vl["TCS11"]["TCS_PAS"] == 1
       ret.espActive = cp.vl["TCS11"]["ABS_ACT"] == 1

@@ -8,7 +8,6 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
-from opendbc.car.hyundai.casper_departure import CasperDeparture
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -183,7 +182,6 @@ class CarController(CarControllerBase):
     self.packer = CANPacker(dbc_names[Bus.pt])
     self.angle_limit_counter = 0
 
-    self.casper_departure = CasperDeparture()
     self.accel_last = 0
     self.accel_value_last = 0.0
     # Refreshed with the other live settings in update().
@@ -581,18 +579,6 @@ class CarController(CarControllerBase):
         can_sends.append(hyundaican.create_mdps12(self.packer, self.frame, CS.mdps12))
 
       casper_ev = self.CP.carFingerprint == CAR.HYUNDAI_CASPER_EV
-      casper_departure = self.casper_departure.update(
-        frame=self.frame,
-        eligible=(self.CP.carFingerprint == CAR.HYUNDAI_CASPER and camera_scc
-                  and self.CP.openpilotLongitudinalControl and CC.enabled and CC.longActive
-                  and CS.scc12 is not None and CS.out.canValid and not CS.out.canTimeout
-                  and CS.out.gearShifter not in (structs.CarState.GearShifter.park, structs.CarState.GearShifter.reverse,
-                                                structs.CarState.GearShifter.neutral, structs.CarState.GearShifter.unknown)
-                  and not CC.cruiseControl.override and not CS.out.brakePressed and not CS.out.gasPressed
-                  and not CS.out.brakeHoldActive and CS.softHoldActive == 0
-                  and self.hyundai_jerk.carrot_cruise == 0),
-        stopping=stopping, v_ego=CS.out.vEgo, accel=accel, a_target=actuators.aTarget,
-      )
       if self.frame % 2 == 0 and self.CP.openpilotLongitudinalControl:
         self.hyundai_jerk.make_jerk(self.CP, CS, accel, actuators, hud_control)
         self.hyundai_jerk.check_carrot_cruise(CC, CS, hud_control, stopping, accel, actuators.aTarget)
@@ -602,7 +588,7 @@ class CarController(CarControllerBase):
 
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
-                                                          CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode, casper_departure=casper_departure))
+                                                          CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,

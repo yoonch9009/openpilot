@@ -87,7 +87,9 @@ small range noise, isolated spikes, interrupted confirmation, both lead roles,
 stale observations and positive-speed requirements. The 0.10 s confirmation
 is explicitly tested at 0.099 and 0.100 s. Vehicle results remain pending.
 
-## Deterministic departure transition trial
+## Deterministic departure transition trial (withdrawn)
+
+Vehicle testing reported no departure improvement from the one-frame positive-acceleration StopReq pulse. The pulse, its Casper-specific controller state alignment, and its dedicated tests were removed. The observations below are retained only as investigation history and are not part of the active workaround.
 
 Frame-level inspection found one StopReq=1 frame with positive acceleration in
 the successful departure, followed by StopReq=0. Three failed departures had no
@@ -120,3 +122,9 @@ and cancellation. Therefore this candidate is not claimed to differ from every
 old transmitted packet only in StopReq. Encoding tests separately verify that
 the explicit departure flag changes only SCC12 StopReq and checksum at otherwise
 identical inputs. Repeated vehicle operation and ECU acceptance remain pending.
+
+## Legacy gasoline Casper AVH interlock trial (2026-09-22)
+
+The next isolated vehicle trial removes only the legacy TCS15 AVH_LAMP hold interlock for HYUNDAI_CASPER while openpilot longitudinal control is active. The tested 2022 gasoline Casper has no OEM Auto Hold or stock stop-and-go SCC, so treating AVH_LAMP=2 as an OEM brake-hold request can incorrectly force SCC ACCMode off during a long-stop departure. Other Hyundai/Kia platforms and stock-longitudinal operation keep the existing AVH_LAMP interpretation.
+
+Driver brake input, parking brake, openpilot soft hold, ordinary Casper stopping with StopReq cleared, acceleration planning, radar/lead selection, and safety hooks are unchanged. This is a narrow diagnostic trial: vehicle logs must confirm whether AVH_LAMP becomes active during prolonged stops and whether removing this interlock restores departure. If positive acceleration is transmitted with ACCMode=1 and the vehicle still remains stopped, the next investigation should move to the ESC/SCC internal long-stop state rather than adding stronger acceleration or StopReq pulses.
