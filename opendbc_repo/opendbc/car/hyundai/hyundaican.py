@@ -153,7 +153,7 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   }
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
-def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode):
+def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode, casper_departure=False):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -217,6 +217,13 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
       and not CS.out.brakePressed and not CS.out.gasPressed
     )
     values["StopReq"] = 0 if casper_decel_stop else stop_req
+    # Consume the departure event on exactly one SCC12 send frame. Preserve
+    # the planned acceleration and require the final command to remain active.
+    if (casper_departure and CS.CP.carFingerprint == CAR.HYUNDAI_CASPER
+        and enabled and not stopping and scc12_acc_mode == 1 and jerk.carrot_cruise == 0
+        and soft_hold_active == 0 and accel > 0.0
+        and not CS.out.brakePressed and not CS.out.gasPressed and not CS.out.brakeHoldActive):
+      values["StopReq"] = 1
     values["aReqRaw"] = accel
     values["aReqValue"] = accel
     values["ACCFailInfo"] = 0

@@ -406,3 +406,11 @@ This result does not validate every model year, ESC version, slope, prolonged st
 Once a stationary lead is established during an ACC stop, motion prediction is restored after the gap has opened at least 10 cm from the held position, with positive lead and relative speeds sustained for 0.10 seconds. The distance threshold was reduced from 15 cm; the confirmation time is unchanged. This releases a planner-input filter rather than directly commanding acceleration. Actual departure still depends on the planned distance/speed trajectory and vehicle response.
 
 This shared ACC filter change is not limited to the Casper. Tests covering 5 cm range changes and isolated spikes do not rule out every real sensor error. Vehicle validation must check both departure response and continued standstill retention.
+
+### Gasoline Casper departure-transition trial
+
+On this fork's gasoline Casper camera-SCC path, ordinary negative deceleration maintains the stop. After the controller transitions to departure with positive planned and output acceleration, SCC12 StopReq is asserted for one transmitted frame and cleared on subsequent frames. This experimental change consistently reproduces a transition observed in one successful departure. It does not add acceleration or impose a fixed launch acceleration.
+
+Valid vehicle CAN, forward gear, active longitudinal control and an observed low-speed negative hold are required. Pedals, cancellation, soft hold, invalid vehicle data and missed controller ticks clear readiness. A return to stopping prevents the pending departure signal, and one departure never triggers periodic retries. Casper EV and other platforms are excluded.
+
+Software phase tests and recorded-input replay passed; ECU/hydraulic simulation and repeated vehicle departures remain unverified. If the vehicle does not depart, the driver must take over rather than increasing acceleration requests to overcome the condition.

@@ -86,3 +86,37 @@ closed-loop or road-measured departure improvement. Regression coverage includes
 small range noise, isolated spikes, interrupted confirmation, both lead roles,
 stale observations and positive-speed requirements. The 0.10 s confirmation
 is explicitly tested at 0.099 and 0.100 s. Vehicle results remain pending.
+
+## Deterministic departure transition trial
+
+Frame-level inspection found one StopReq=1 frame with positive acceleration in
+the successful departure, followed by StopReq=0. Three failed departures had no
+such frame. controlsd copied longControlState before LongControl.update but
+acceleration afterwards; its 100 Hz mixed-state message was sometimes skipped
+by 50 Hz SCC transmission. This establishes software timing dependence, not
+proof of an ESC protocol requirement.
+
+For gasoline Casper only, publish state after the longitudinal update. A
+CasperDeparture instance tracks an eligible negative hold at |vEgo| <= 0.1 m/s
+and consumes its departure event on the next SCC transmit tick with non-stopping
+state, positive aTarget and positive acceleration. StopReq=1 is emitted for one
+frame, then returns to zero. This is not a timed retry or an acceleration boost.
+Controller continuity, active control, gear, CAN validity, driver overrides and
+soft hold gate the event. The encoder rechecks the final mode and request after
+Carrot overrides. No safety hooks, raw radar or lead selection change.
+
+Unit tests exercise 20 control phases, ten repeated stop/departure cycles,
+intervening non-transmit-tick interruptions, frame discontinuities, platform
+isolation and real CAN packing/checksums. The actual longitudinal publication
+block is executed with LongControl; the old code fails its departure and cancel
+state-alignment checks. Focused suites: 342 passed. Recorded-input replay uses
+four departure windows and both 50 Hz phases: exactly one event in all eight
+cases, without changing recorded acceleration. It substitutes the same-tick
+controlsState for the old published actuator state; it is an open-loop event
+replay, not a complete controller/vehicle or hydraulic simulation.
+
+The state alignment also removes the old one-tick lag for Casper jerk shaping
+and cancellation. Therefore this candidate is not claimed to differ from every
+old transmitted packet only in StopReq. Encoding tests separately verify that
+the explicit departure flag changes only SCC12 StopReq and checksum at otherwise
+identical inputs. Repeated vehicle operation and ECU acceptance remain pending.
