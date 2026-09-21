@@ -13,8 +13,8 @@ STOPPED_EGO_SPEED = 0.10
 STOPPED_LEAD_SPEED = 0.30
 STABLE_RANGE_SPAN = 0.10
 STABLE_TIME = 0.20
-# Three 5 cm range bins: a single quantized range step is not departure.
-DEPARTURE_DISTANCE = 0.15
+# Two 5 cm range bins: a single quantized range step is not departure.
+DEPARTURE_DISTANCE = 0.10
 DEPARTURE_TIME = 0.10
 MAX_FRAME_GAP = 0.20
 

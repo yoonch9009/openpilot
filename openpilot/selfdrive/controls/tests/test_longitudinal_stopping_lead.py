@@ -60,10 +60,10 @@ def test_small_range_step_and_rising_speed_do_not_predict_departure():
 def test_fast_real_departure_restores_measured_kinematics_after_range_confirmation():
   guard = StoppingLeadFilter()
   establish_stop(guard)
-  for t, distance in ((1.25, 5.6), (1.3, 5.7), (1.35, 5.75)):
+  for t, distance in ((1.25, 5.6), (1.3, 5.7)):
     assert update(guard, radar_state(distance=distance, v_lead=0.8, v_rel=0.75), t=t).leadOne.vLead == 0.0
   source = radar_state(distance=5.8, v_lead=1.0, v_rel=0.95, a_lead=1.0, j_lead=0.5)
-  assert update(guard, source, t=1.4) is source
+  assert update(guard, source, t=1.35) is source
   assert guard.held_mask == 0
 
 
@@ -73,12 +73,12 @@ def test_slow_departure_accumulates_range_from_fixed_stop_position():
   first_release = None
   for index in range(1, 41):
     elapsed = index * 0.05
-    # 0.10 m/s crawl, quantized at 5 cm. No individual frame grows by 15 cm.
+    # 0.10 m/s crawl, quantized at 5 cm. No individual frame grows by 10 cm.
     distance = 5.5 + int((elapsed * 0.1 + 1e-9) / 0.05) * 0.05
     output = update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=1.2 + elapsed, v_ego=0.0)
     if output.leadOne.vLead > 0.0 and first_release is None:
       first_release = elapsed
-  assert first_release == pytest.approx(1.6)
+  assert first_release == pytest.approx(1.1)
 
 
 def test_one_large_range_spike_does_not_confirm_departure():
@@ -156,3 +156,33 @@ def test_missing_or_vision_only_track_does_not_inherit_stopped_radar_history():
   assert update(guard, source, t=1.3) is source
   source.leadOne.status = False
   assert update(guard, source, t=1.35) is source
+
+
+@pytest.mark.parametrize('role', ('leadOne', 'leadTwo'))
+def test_ten_centimeter_departure_still_requires_full_confirmation(role):
+  guard = StoppingLeadFilter()
+  establish_stop(guard, role=role)
+  for t in (1.25, 1.30, 1.349):
+    output = update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1, role=role), t=t)
+    assert getattr(output, role).vLead == 0.0
+  source = radar_state(distance=5.6, v_lead=0.1, v_rel=0.1, role=role)
+  assert update(guard, source, t=1.35) is source
+
+
+def test_range_rebound_resets_departure_confirmation():
+  guard = StoppingLeadFilter()
+  establish_stop(guard)
+  for t, distance in ((1.25, 5.6), (1.3, 5.55), (1.35, 5.6), (1.4, 5.6)):
+    assert update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  source = radar_state(distance=5.6, v_lead=0.1, v_rel=0.1)
+  assert update(guard, source, t=1.45) is source
+
+
+@pytest.mark.parametrize('v_lead,v_rel', ((0.0, 0.1), (0.1, 0.0), (0.1, -0.1)))
+def test_ten_centimeter_range_change_alone_does_not_release(v_lead, v_rel):
+  guard = StoppingLeadFilter()
+  establish_stop(guard)
+  for index in range(10):
+    output = update(guard, radar_state(distance=5.6, v_lead=v_lead, v_rel=v_rel), t=1.25 + index * 0.05)
+    assert guard.held_mask == 1
+    assert output.leadOne.vLead == 0.0

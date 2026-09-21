@@ -71,3 +71,18 @@ restore the previous file and investigate without adding periodic release pulses
 Private route logs, credentials, VINs and device identifiers are not published.
 The original file and local trial artifacts are retained outside the repository.
 AutoEngage=2 and other owner-selected defaults are unaffected.
+
+## Departure filter adjustment (2026-09-21)
+
+The shared StoppingLeadFilter departure distance is reduced from 0.15 to 0.10 m;
+the continuous fresh-observation confirmation remains 0.10 s. Raw radar data,
+lead selection, SCC12 StopReq handling and acceleration limits are unchanged.
+The filter conditions planner input copies after the fast-radar overlay, so this
+is not a radar detector/lead-selection or NAS radar-replay service change.
+
+The deterministic 0.10 m/s lead crawl with 5 cm range quantization releases the
+filter at 1.10 s instead of 1.60 s. This is a synthetic filter result, not a
+closed-loop or road-measured departure improvement. Regression coverage includes
+small range noise, isolated spikes, interrupted confirmation, both lead roles,
+stale observations and positive-speed requirements. The 0.10 s confirmation
+is explicitly tested at 0.099 and 0.100 s. Vehicle results remain pending.

@@ -400,3 +400,9 @@ The adjustment requires continuous measured outward motion and sufficient separa
 For ordinary automatic deceleration stops on the gasoline Casper, SCC12 `StopReq` is cleared while negative acceleration requests are retained. The owner reported successful standstill holding on the tested 2022 vehicle after the previous stop/creep cycling. Casper EV and other platforms are unchanged, as are pedal intervention, cruise cancellation and soft-hold handling.
 
 This result does not validate every model year, ESC version, slope, prolonged stop or departure scenario. The driver must continue monitoring and brake whenever needed. The withdrawn following-stop latch is not restored, and owner-selected settings are preserved.
+
+### Confirming departure of a stopped lead
+
+Once a stationary lead is established during an ACC stop, motion prediction is restored after the gap has opened at least 10 cm from the held position, with positive lead and relative speeds sustained for 0.10 seconds. The distance threshold was reduced from 15 cm; the confirmation time is unchanged. This releases a planner-input filter rather than directly commanding acceleration. Actual departure still depends on the planned distance/speed trajectory and vehicle response.
+
+This shared ACC filter change is not limited to the Casper. Tests covering 5 cm range changes and isolated spikes do not rule out every real sensor error. Vehicle validation must check both departure response and continued standstill retention.
