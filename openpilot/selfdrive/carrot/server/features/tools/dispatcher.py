@@ -565,7 +565,7 @@ async def _run_tool_job(job: Dict[str, Any]) -> None:
       return
 
     if action == "git_reset_repo_fetch":
-      url = "https://github.com/ajouatom/openpilot.git"
+      url = "https://github.com/yoonch9009/openpilot.git"
       # Phase 0: clear stale git locks so the remote/config/fetch steps below
       # aren't blocked by a leftover *.lock from a crashed git process.
       await jobs.capture_exec(["find", ".git", "-type", "f", "-name", "*.lock", "-delete"], cwd=repo_dir, timeout=10)
@@ -1088,7 +1088,7 @@ async def _dispatch_sync(request: web.Request, body: Dict[str, Any]) -> web.Resp
       return web.json_response({"ok": rc == 0, "commits": commits, "current_commit": current_commit, "out": out, "summary_key": "git_result_log_done", "summary_vars": {"count": len(commits)}})
 
     if action == "git_reset_repo_fetch":
-      url = "https://github.com/ajouatom/openpilot.git"
+      url = "https://github.com/yoonch9009/openpilot.git"
       out_all = ""
 
       # clear stale git locks so the remote/config/fetch steps aren't blocked

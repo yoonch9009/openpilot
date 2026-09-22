@@ -1204,7 +1204,7 @@ function initToolsPage() {
     const title = getUIText("git_reset_repo_title", "Reset Repository");
     const msg = getUIText(
       "git_reset_repo_confirm",
-      "Warning: This will remove origin and re-add 'ajouatom/openpilot'.\nAll local changes will be lost. Proceed?"
+      "Warning: This will remove origin and re-add 'yoonch9009/openpilot'.\nAll local changes will be lost. Proceed?"
     );
     
     if (!await appConfirm(msg, { title, danger: true })) return;
