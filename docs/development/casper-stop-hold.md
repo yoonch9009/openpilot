@@ -170,3 +170,35 @@ missing data, stale plans, route boundaries, pedal intervention, repeated stops,
 and incomplete recordings. Archived-log replay identifies the previously observed
 one automatic departure and three driver interventions; it does not validate the
 current revision on the vehicle or establish an ESC reset sequence.
+
+## Near-standstill departure comfort-band trial (2026-09-22)
+
+At the owner's request, the next vehicle trial changes SCC14 ComfortBandUpper
+and ComfortBandLower to zero only for gasoline Casper near-standstill positive
+acceleration. In archived departures, initial requests around +0.14 to +0.17 m/s2
+were accompanied by bands around 0.82 to 0.94. Zero bands are also used by the
+inspected FrogPilot classic-CAN encoder. However, similar nonzero bands occurred
+in the successful departure, and failed requests later exceeded the band width.
+The bands are therefore a tracking-shaping hypothesis, not a proved explanation
+of the long-stop failure or a documented Casper ESC timeout.
+
+The gate requires openpilot longitudinal control, available cruise, enabled
+control, non-stopping state, positive final acceleration, both ACC modes equal
+to 1, SCC12 present, valid CAN, drive gear, abs(vEgo) below 0.3 m/s, no driver
+brake/gas, no parking brake and no soft hold. It also covers initial positive
+engagement near standstill; it does not require a preceding timed stop. The
+original bands return immediately outside these conditions. There is no timer,
+pulse, retry, forced override or automatic cancellation/re-engagement sequence.
+SCC12, acceleration requests, StopReq, modes, jerk limits and other platforms
+are unchanged. The previously successful negative-deceleration stop workaround
+and restored AVH interlock remain in place.
+
+Earlier trial B zeroed bands while StopReq=1 during negative-acceleration stopping
+and did not prevent creeping. This trial instead changes only positive departure
+requests; it does not repeat the old stopping combination. Vehicle effectiveness
+remains unverified, and crisper initial acceleration is a possible behavior change.
+No fixed-duration driving test is required. Analyze naturally occurring events
+with the offline observer, including the transmitted SCC14 bands, requested
+acceleration, vehicle motion and driver intervention. Keep complete route logs.
+Revert this departure-band change if vehicle behavior worsens; no inference of
+ECU acceptance or hydraulic behavior follows from passing encoder tests alone.

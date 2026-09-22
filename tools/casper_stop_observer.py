@@ -138,6 +138,7 @@ def extract(paths):
           c = e.carState
           service['cs'] = (t, {'v': c.vEgo, 'brake': c.brakePressed, 'gas': c.gasPressed,
             'hold': c.brakeHoldActive, 'gear': str(c.gearShifter),
+            'canValid': c.canValid, 'parkingBrake': c.parkingBrake,
             'cruise': c.cruiseState.to_dict(), 'softHold': c.softHoldActive})
         elif kind == 'longitudinalPlan':
           p = e.longitudinalPlan

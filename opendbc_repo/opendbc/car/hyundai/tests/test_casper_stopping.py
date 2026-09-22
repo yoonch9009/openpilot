@@ -4,6 +4,7 @@ from types import SimpleNamespace as NS
 import unittest
 
 from opendbc.can import CANPacker, CANParser
+from opendbc.car import structs
 from opendbc.car.hyundai.values import CAR
 
 
@@ -22,8 +23,9 @@ baseline = NS(create_acc_commands_scc=reference_commands)
 
 
 def make_state(platform=CAR.HYUNDAI_CASPER):
-  return NS(CP=NS(carFingerprint=platform), paddle_button_prev=0, softHoldActive=0,
+  return NS(CP=NS(carFingerprint=platform, openpilotLongitudinalControl=True), paddle_button_prev=0, softHoldActive=0,
             out=NS(brakeHoldActive=False, brakePressed=False, gasPressed=False,
+                   canValid=True, gearShifter=structs.CarState.GearShifter.drive, vEgo=2.0, parkingBrake=False,
                    cruiseState=NS(available=True)), scc11={'DriverAlertDisplay': 1},
             scc12={'CF_VSM_ConfMode': 1}, scc14={}, fca11=None)
 
