@@ -590,7 +590,8 @@ class CarController(CarControllerBase):
 
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
-                                                          CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode))
+                                                          CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode,
+                                                          long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,

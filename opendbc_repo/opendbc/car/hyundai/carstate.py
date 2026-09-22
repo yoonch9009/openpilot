@@ -43,6 +43,7 @@ STANDSTILL_THRESHOLD = 12 * 0.03125 * CV.KPH_TO_MS
 CANFD_AVH_RELEASE_GRACE_FRAMES = round(0.5 / DT_CTRL)
 CANFD_AVH_LAMP_ACTIVE = 2
 
+
 BUTTONS_DICT = {Buttons.RES_ACCEL: ButtonType.accelCruise, Buttons.SET_DECEL: ButtonType.decelCruise,
                 Buttons.GAP_DIST: ButtonType.gapAdjustCruise, Buttons.CANCEL: ButtonType.cancel, Buttons.LFA_BUTTON: ButtonType.lfaButton}
 
@@ -54,6 +55,14 @@ EV_MODE_STATUS_TIMEOUT_NS = 500_000_000
 LEGACY_LFA_BUTTON_ADDR = 0x391
 LEGACY_CRUISE_BUTTON_ALT_ADDR = 0x3EF
 LEGACY_LFA_BUTTON_ALT_ADDR = 0x416
+
+
+def casper_brake_control_active(cp) -> bool:
+  """Use fresh TCS13 feedback only; DCEnable is not a pressure measurement."""
+  timestamp = cp.ts_nanos["TCS13"]["DCEnable"]
+  age = cp._last_update_nanos - timestamp
+  return bool(timestamp > 0 and 0 <= age <= 100_000_000 and not cp.bus_timeout
+              and cp.vl["TCS13"]["DCEnable"] == 1)
 
 
 def is_canfd_avh_active(avh_state: int) -> bool:
@@ -439,6 +448,7 @@ class CarState(CarStateBase):
 
     ret = structs.CarState()
     cp_cruise = cp_cam if self.CP.flags & HyundaiFlags.CAMERA_SCC else cp
+    self.casper_brake_control_active = self.CP.carFingerprint == CAR.HYUNDAI_CASPER and casper_brake_control_active(cp)
     self.is_metric = cp.vl["CLU11"]["CF_Clu_SPEED_UNIT"] == 0
     speed_conv = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
