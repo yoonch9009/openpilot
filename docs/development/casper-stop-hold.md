@@ -171,7 +171,7 @@ and incomplete recordings. Archived-log replay identifies the previously observe
 one automatic departure and three driver interventions; it does not validate the
 current revision on the vehicle or establish an ESC reset sequence.
 
-## Near-standstill departure comfort-band trial (2026-09-22)
+## Near-standstill departure comfort-band trial (withdrawn 2026-09-22)
 
 At the owner's request, the next vehicle trial changes SCC14 ComfortBandUpper
 and ComfortBandLower to zero only for gasoline Casper near-standstill positive
@@ -202,3 +202,35 @@ with the offline observer, including the transmitted SCC14 bands, requested
 acceleration, vehicle motion and driver intervention. Keep complete route logs.
 Revert this departure-band change if vehicle behavior worsens; no inference of
 ECU acceptance or hydraulic behavior follows from passing encoder tests alone.
+
+
+The owner reported two failed departures after the comfort-band trial. The
+transmitted bands were zero, yet positive requests up to +2.50 and +1.63 m/s2 did
+not produce departure before driver intervention. This trial is now withdrawn;
+SCC14 comfort bands use the original jerk helper values again. The offline
+analysis tool remains available.
+
+## Owner-requested continuous departure StopReq trial (2026-09-22)
+
+At the owner's explicit request, after stopping further route-log investigation,
+this trial keeps StopReq=1 on every eligible SCC12 transmit tick during a
+near-standstill positive departure request. It is not the previously ineffective
+single-frame pulse. There is no duration timer or pulse-count limit. Eligibility
+requires gasoline Casper, openpilot longitudinal control, enabled and longActive,
+cruise available, non-stopping state, positive final accel, SCC12 and SCC14
+available with normal mode 1, valid CAN, D gear, abs(vEgo)<0.3 m/s, and no gas,
+brake, parking brake or soft hold. Other conditions immediately use the original
+encoder logic. The established negative-acceleration stopping workaround still
+clears StopReq. ACC modes, raw/value acceleration, jerk limits, safety hooks and
+other vehicle platforms are unchanged. This condition is stateless and can also
+apply to an initial positive engagement near standstill; it is not latched into
+normal driving.
+
+The generic signal is a stop request, not a documented Casper release command.
+Sustained assertion with positive acceleration is an explicitly requested vehicle
+experiment; its effect on this ECU is not established by software tests. Do not
+represent it as an OEM protocol or a verified fix. Tests check continuous output
+across 250 consecutive transmit calls, repeated cycles, return to normal handling
+on movement/intervention, unchanged other fields, and checksum integrity. They do
+not simulate the ECU or prove standstill/departure behavior. No new driving-log
+replay is part of this change; the owner explicitly asked to stop that analysis.

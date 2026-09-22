@@ -5,7 +5,7 @@ import unittest
 from opendbc.can import CANParser
 from opendbc.car import structs
 from opendbc.car.hyundai.values import CAR
-from opendbc.car.hyundai.tests.test_casper_stopping import baseline, candidate, encode, make_state
+from opendbc.car.hyundai.tests.test_casper_stopping import baseline, candidate, decode, encode, make_state
 
 
 def scc14(messages):
@@ -14,7 +14,7 @@ def scc14(messages):
   return dict(parser.vl['SCC14'])
 
 
-class TestCasperDepartureBands(unittest.TestCase):
+class TestCasperDepartureRequest(unittest.TestCase):
   def state(self):
     cs = make_state()
     cs.out.vEgo = 0.0
@@ -25,19 +25,21 @@ class TestCasperDepartureBands(unittest.TestCase):
     args.update(kwargs)
     return encode(baseline, cs, **args), encode(candidate, cs, **args)
 
-  def test_only_comfort_fields_change_during_departure(self):
+  def test_only_stopreq_and_checksum_change_during_departure(self):
     for v in (-.01, 0, .01, .299):
       for accel in (.01, .15, 1.0, 2.3):
         with self.subTest(v=v, accel=accel):
           cs = self.state()
           cs.out.vEgo = v
           old, new = self.pair(cs, accel=accel)
-          a, b = scc14(old), scc14(new)
-          self.assertEqual((b['ComfortBandUpper'], b['ComfortBandLower']), (0, 0))
-          self.assertGreater(a['ComfortBandUpper'], 0)
-          self.assertEqual({k: val for k, val in a.items() if not k.startswith('ComfortBand')},
-                           {k: val for k, val in b.items() if not k.startswith('ComfortBand')})
-          self.assertEqual([m for m in old if m[0] != 905], [m for m in new if m[0] != 905])
+          a, b = decode(old), decode(new)
+          self.assertEqual((a['StopReq'], b['StopReq']), (0, 1))
+          self.assertEqual({k: val for k, val in a.items() if k not in ('StopReq', 'CR_VSM_ChkSum')},
+                           {k: val for k, val in b.items() if k not in ('StopReq', 'CR_VSM_ChkSum')})
+          self.assertEqual([m for m in old if m[0] != 1057], [m for m in new if m[0] != 1057])
+          raw = next(m[1] for m in new if m[0] == 1057)
+          self.assertEqual(sum((v >> 4) + (v & 15) for v in raw) % 16, 0)
+          self.assertGreater(scc14(new)['ComfortBandUpper'], 0)
 
   def test_driver_hold_validity_gear_and_speed_gates(self):
     cases = [('brakePressed', True), ('gasPressed', True), ('parkingBrake', True),
@@ -50,7 +52,7 @@ class TestCasperDepartureBands(unittest.TestCase):
         cs = self.state()
         setattr(cs.out, attr, value)
         self.assertEqual(*self.pair(cs))
-    for kwargs in (dict(enabled=False), dict(stopping=True), dict(long_override=True),
+    for kwargs in (dict(enabled=False), dict(long_active=False), dict(stopping=True), dict(long_override=True),
                    dict(accel=0), dict(accel=-.5)):
       with self.subTest(kwargs=kwargs):
         self.assertEqual(*self.pair(self.state(), **kwargs))
@@ -87,8 +89,10 @@ class TestCasperDepartureBands(unittest.TestCase):
     cs = self.state()
     for _ in range(5):
       before = copy.deepcopy(cs)
-      for _ in range(100):
-        self.assertEqual(scc14(self.pair(cs)[1])['ComfortBandUpper'], 0)
+      for idx in range(250):
+        msg = self.pair(cs, idx=idx)[1]
+        self.assertEqual(decode(msg)['StopReq'], 1)
+        self.assertEqual(decode(msg)['CR_VSM_Alive'], idx % 15)
       self.assertEqual(cs, before)
       cs.out.vEgo = 1.0
       self.assertEqual(*self.pair(cs))
@@ -98,6 +102,7 @@ class TestCasperDepartureBands(unittest.TestCase):
       cs.out.brakePressed = False
       stop = encode(candidate, cs, stopping=True, accel=-.5)
       self.assertGreater(scc14(stop)['ComfortBandUpper'], 0)
+      self.assertEqual(decode(stop)['StopReq'], 0)
 
 
 if __name__ == '__main__':
