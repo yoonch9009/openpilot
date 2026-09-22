@@ -123,8 +123,50 @@ old transmitted packet only in StopReq. Encoding tests separately verify that
 the explicit departure flag changes only SCC12 StopReq and checksum at otherwise
 identical inputs. Repeated vehicle operation and ECU acceptance remain pending.
 
-## Legacy gasoline Casper AVH interlock trial (2026-09-22)
+## Legacy gasoline Casper AVH interlock trial (withdrawn 2026-09-22)
 
-The next isolated vehicle trial removes only the legacy TCS15 AVH_LAMP hold interlock for HYUNDAI_CASPER while openpilot longitudinal control is active. The tested 2022 gasoline Casper has no OEM Auto Hold or stock stop-and-go SCC, so treating AVH_LAMP=2 as an OEM brake-hold request can incorrectly force SCC ACCMode off during a long-stop departure. Other Hyundai/Kia platforms and stock-longitudinal operation keep the existing AVH_LAMP interpretation.
+The AVH bypass has been withdrawn at the owner's request. Reinspection of the
+stored successful departure and three failed departures found AVH_LAMP=0 and
+brakeHoldActive=false throughout the four available segments. The bypass therefore
+did not change the relevant control path in those records. Classic-CAN vehicles,
+including Casper, again use AVH_LAMP==2 for brakeHoldActive. This restores the
+original interlock; it does not enable openpilot soft hold.
 
-Driver brake input, parking brake, openpilot soft hold, ordinary Casper stopping with StopReq cleared, acceleration planning, radar/lead selection, and safety hooks are unchanged. This is a narrow diagnostic trial: vehicle logs must confirm whether AVH_LAMP becomes active during prolonged stops and whether removing this interlock restores departure. If positive acceleration is transmitted with ACCMode=1 and the vehicle still remains stopped, the next investigation should move to the ESC/SCC internal long-stop state rather than adding stronger acceleration or StopReq pulses.
+The ordinary-deceleration StopReq=0 workaround remains. The ineffective one-frame
+departure pulse remains withdrawn. No acceleration, jerk, planner, or safety-hook
+change accompanies this restoration. The exact prolonged-stop release condition
+is still unverified; do not label this revert a proven departure fix.
+
+## Ordinary-driving log analysis
+
+The owner cannot perform fixed-duration or fixed-order stop trials. Use natural
+stop/departure events from existing rlogs instead. No prescribed waiting interval,
+extra CAN transmission, or onroad diagnostic process is required. Driver takeover
+must not be delayed to collect data. After driving, preserve the complete route,
+including preceding segments, so a cropped segment is not mistaken for a short stop.
+
+`tools/casper_stop_observer.py` reads rlogs offline with the full cereal schema and
+Hyundai DBC. It separates received bus 0/2 messages from bus 128 transmit echoes,
+records CAN flag transitions and approximately 10 Hz state/request snapshots, and
+summarizes observed departure attempts. Only actually received, recent messages
+are included; missing-message parser defaults are not treated as measured zeros.
+Events are ordered by their monotonic timestamps for analysis, not as a simulation
+of realtime process delivery. Missing segments and incomplete recordings are
+explicitly marked. Driver intervention is distinguished from motion without pedal
+input. The generic DBC is not an OEM specification of this Casper ECU.
+
+On the device, after driving and while offroad:
+
+```bash
+cd /data/openpilot
+/usr/local/venv/bin/python tools/casper_stop_observer.py \
+  --input-root /data/media/0/realdata \
+  --output /data/casper-stop-diagnostics/trial-analysis.json
+```
+
+The tool does not change Params, vehicle commands, raw logs, or startup services.
+Reports contain route metadata and should remain local. Synthetic tests cover
+missing data, stale plans, route boundaries, pedal intervention, repeated stops,
+and incomplete recordings. Archived-log replay identifies the previously observed
+one automatic departure and three driver interventions; it does not validate the
+current revision on the vehicle or establish an ESC reset sequence.

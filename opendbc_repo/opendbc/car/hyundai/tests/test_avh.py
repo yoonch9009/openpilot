@@ -2,20 +2,8 @@ from opendbc.can import CANDefine, CANParser
 from opendbc.can.dbc import DBC
 from opendbc.car.hyundai.carstate import (
   CANFD_AVH_RELEASE_GRACE_FRAMES,
-  is_legacy_brake_hold_active,
   update_canfd_auto_hold_interlock_state,
 )
-from opendbc.car.hyundai.values import CAR
-
-
-def test_legacy_casper_openpilot_long_ignores_avh_lamp_hold_interlock():
-  assert not is_legacy_brake_hold_active(CAR.HYUNDAI_CASPER, True, 2)
-
-
-def test_legacy_avh_lamp_hold_interlock_is_preserved_elsewhere():
-  assert is_legacy_brake_hold_active(CAR.HYUNDAI_CASPER, False, 2)
-  assert is_legacy_brake_hold_active(CAR.HYUNDAI_SONATA, True, 2)
-  assert not is_legacy_brake_hold_active(CAR.HYUNDAI_CASPER, True, 3)
 
 
 def test_canfd_avh_status_definition():
