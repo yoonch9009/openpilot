@@ -127,7 +127,9 @@ Available under Vehicle & Hardware → CANFD·HDA, with **OFF** as the default. 
 
 - **OFF:** Retains existing stop requests, negative acceleration requests, InfoDisplay, and byte7 handling.
 - **ON:** Sends StopReq=1 with aReq=0 during low-speed stop requests and sets InfoDisplay and byte7 to zero. The lower band uses a fixed experimental value of 0.20 during stop requests, without copying stock SCC values.
-- If motion persists, releases StopReq, requests negative acceleration, then reasserts once. If the retry still fails, retains negative acceleration requests without repeated toggling. Driver pedal input, cruise disengagement, and interlocks such as Auto Hold cancel retries.
+- In normal ACC, decelerating below 0.7 m/s with a planned stop prepares stop intent up to one second earlier. Ordinary braking continues while actual acceleration is below -0.50 m/s²; stopping begins in the control cycle when it reaches -0.50 m/s² or above. Steady crawling and planned starts or reacceleration do not qualify. Blended-mode stop intent is unchanged.
+- An armed, stationary soft hold requests negative acceleration before the driver releases the brake. StopReq is asserted after two SCC frames with transmitted aReqValue at or below -0.50 m/s². Jerk limiting can extend preparation; releasing the pedal earlier continues the preparation phase.
+- If motion persists, releases StopReq, requests negative acceleration, then reasserts once. If the retry still fails, retains negative acceleration requests without repeated toggling. Accelerator input, cruise disengagement, and interlocks such as Auto Hold cancel it. Requests while the brake is pressed are allowed only for an armed soft hold with every speed input at or below 0.10 m/s.
 
 The fixed stopping acceleration above still applies. When enabled, the CAN output stage substitutes zero acceleration during stop requests; recovery requests the stronger deceleration of the existing request and -0.50 m/s².
 
@@ -137,6 +139,8 @@ The fixed stopping acceleration above still applies. When enabled, the CAN outpu
 ### `VEgoStopping`
 
 Range 1–100, step 5. A value of 50 is 0.50 m/s (about 1.8 km/h). `shouldStop` becomes true when both the planner's current and one-second-ahead target speeds are below this threshold.
+
+With `CanfdStopRetry` enabled in normal ACC, an additional low-speed check anticipates a planned stop by up to one second. This earlier check uses the smaller of the setting and 0.05 m/s as its planned-speed threshold; it does not advance the acceleration plan itself.
 
 Lowering it delays stop recognition and may release stop state sooner on departure. Raising it enters stop state earlier but can make departure feel sluggish.
 
@@ -407,10 +411,8 @@ Once a stationary lead is established during an ACC stop, motion prediction is r
 
 This shared ACC filter change is not limited to the Casper. Tests covering 5 cm range changes and isolated spikes do not rule out every real sensor error. Vehicle validation must check both departure response and continued standstill retention.
 
-### Gasoline Casper departure-transition trial
+### Gasoline Casper AVH interlock trial
 
-On this fork's gasoline Casper camera-SCC path, ordinary negative deceleration maintains the stop. After the controller transitions to departure with positive planned and output acceleration, SCC12 StopReq is asserted for one transmitted frame and cleared on subsequent frames. This experimental change consistently reproduces a transition observed in one successful departure. It does not add acceleration or impose a fixed launch acceleration.
+For the tested 2022 gasoline Casper with openpilot longitudinal control, this fork ignores legacy TCS15 `AVH_LAMP=2` as an OEM brake-hold interlock. The vehicle has no stock Auto Hold / stop-and-go SCC, and treating that lamp value as OEM hold can force SCC ACCMode off during a prolonged-stop departure. Driver brake input, parking brake, openpilot soft hold, radar/planner stopping logic, and other Hyundai/Kia platforms remain unchanged.
 
-Valid vehicle CAN, forward gear, active longitudinal control and an observed low-speed negative hold are required. Pedals, cancellation, soft hold, invalid vehicle data and missed controller ticks clear readiness. A return to stopping prevents the pending departure signal, and one departure never triggers periodic retries. Casper EV and other platforms are excluded.
-
-Software phase tests and recorded-input replay passed; ECU/hydraulic simulation and repeated vehicle departures remain unverified. If the vehicle does not depart, the driver must take over rather than increasing acceleration requests to overcome the condition.
+This is an isolated diagnostic change for long-stop departure behavior. If a prolonged stop still fails while ACCMode stays active and positive acceleration requests are transmitted, investigation should move to the ESC/SCC internal long-stop state rather than adding StopReq pulses or stronger launch acceleration.
