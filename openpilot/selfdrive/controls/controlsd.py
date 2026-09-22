@@ -10,6 +10,8 @@ from openpilot.common.params import Params
 from openpilot.common.pid import MultiplicativeUnwindPID
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper
 from openpilot.common.swaglog import cloudlog
+from openpilot.common.casper_diagnostics import CasperDiagnostics, control_snapshot
+from opendbc.car.hyundai.values import CAR
 import numpy as np
 from collections import deque
 
@@ -59,6 +61,7 @@ class Controls:
     cloudlog.info("controlsd got CarParams")
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
+    self.casper_diagnostics = CasperDiagnostics('controlsd') if self.CP.carFingerprint == CAR.HYUNDAI_CASPER else None
 
     self.disable_dm = False
 
@@ -444,6 +447,8 @@ class Controls:
     cc_send.valid = CS.canValid
     cc_send.carControl = CC
     self.pm.send('carControl', cc_send)
+    if getattr(self, 'casper_diagnostics', None) is not None:
+      self.casper_diagnostics.record(CS.vEgo, lambda: control_snapshot(self.sm, CS, CC, cc_send.logMonoTime))
 
   def run(self):
     rk = Ratekeeper(100, print_delay_threshold=None)

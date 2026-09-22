@@ -449,6 +449,8 @@ class CarState(CarStateBase):
     ret = structs.CarState()
     cp_cruise = cp_cam if self.CP.flags & HyundaiFlags.CAMERA_SCC else cp
     self.casper_brake_control_active = self.CP.carFingerprint == CAR.HYUNDAI_CASPER and casper_brake_control_active(cp)
+    if self.CP.carFingerprint == CAR.HYUNDAI_CASPER:
+      self.casper_tcs13_mono_ns = cp.ts_nanos["TCS13"]["DCEnable"]
     self.is_metric = cp.vl["CLU11"]["CF_Clu_SPEED_UNIT"] == 0
     speed_conv = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 

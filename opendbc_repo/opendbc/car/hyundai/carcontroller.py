@@ -13,6 +13,7 @@ from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParam
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.vehicle_model import VehicleModel
 from openpilot.common.filter_simple import MyMovingAverage
+from openpilot.common.casper_diagnostics import CasperDiagnostics
 
 VisualAlert = structs.CarControl.HUDControl.VisualAlert
 LongCtrlState = structs.CarControl.Actuators.LongControlState
@@ -176,6 +177,7 @@ def apply_steer_angle_limits_physics(desired_sw_deg: float,
 
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
+    self.casper_diagnostics = CasperDiagnostics('scc') if CP.carFingerprint == CAR.HYUNDAI_CASPER else None
     super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
@@ -591,7 +593,8 @@ class CarController(CarControllerBase):
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
                                                           CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode,
-                                                          long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid))
+                                                          long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid,
+                                                          diagnostics=self.casper_diagnostics))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,
@@ -879,4 +882,3 @@ class HyundaiJerk:
         self.jerk_l = min(max(1.0, -self.jerk * 4.0), jerk_max_l)
         self.cb_upper = np.clip(0.9 + accel * 0.2, 0, 1.2)
         self.cb_lower = np.clip(0.8 + accel * 0.2, 0, 1.2)
-

@@ -176,7 +176,7 @@ def casper_departure_jerk_upper(CS, enabled, long_active, stopping, accel, long_
 
 
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode,
-                            long_active=False):
+                            long_active=False, diagnostics=None):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -265,6 +265,13 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
     values["ObjGap"] = objGap #2 if hud_control.leadVisible else 0 # 5: >30, m, 4: 25-30 m, 3: 20-25 m, 2: < 20 m, 0: no lead
     values["ObjDistStat"] = objGap2
     commands.append(packer.make_can_msg("SCC14", 0, values))
+
+    if diagnostics is not None:
+      from openpilot.common.casper_diagnostics import scc_snapshot
+      upper = values["JerkUpperLimit"]
+      diagnostics.record(CS.out.vEgo, lambda: scc_snapshot(
+        CS, long_enabled, long_active, stopping, accel, long_override, hud_control, jerk,
+        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req))
 
   if CS.fca11 is not None and suppress_casper_ev_fca: # CASPER_EV의 경우 FCA11에서 fail이 간헐적 발생함.. 그냥막자.. 원인불명..
     values = suppress_casper_ev_fca11_fault(copy.copy(CS.fca11))

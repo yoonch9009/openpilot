@@ -16,6 +16,49 @@ MESSAGES = {339: 'TCS11', 544: 'ESP12', 608: 'EMS16', 809: 'EMS12',
             1287: 'TCS15', 905: 'SCC14'}
 
 
+def parse_diagnostic(text):
+  try:
+    payload = json.loads(text).get('msg')
+    if isinstance(payload, dict) and payload.get('event') == 'casper_departure_diagnostic':
+      return payload
+  except (ValueError, AttributeError, TypeError):
+    pass
+  return None
+
+
+def motion_followups(rows, departures):
+  """Observe five seconds after first motion; do not call initial creep success."""
+  results = []
+  for attempt in departures:
+    if attempt['outcome'] != 'motion_without_pedal_input':
+      continue
+    start = attempt['end_t']
+    previous = start
+    outcome = 'recording_ended'
+    end = start
+    for row in rows:
+      if row['route'] != attempt['route'] or row['t'] <= start:
+        continue
+      end = row['t']
+      if end - previous > 1 or not 0 <= row['cs_age'] <= .2:
+        outcome = 'data_gap'
+      elif row['gas'] or row['brake']:
+        outcome = 'driver_intervened'
+      elif not row['active']:
+        outcome = 'control_inactive'
+      elif abs(row['v']) <= .1:
+        outcome = 'restopped_within_window'
+      elif end - start >= 5:
+        outcome = 'motion_observed_for_5s'
+      else:
+        previous = end
+        continue
+      break
+    results.append(dict(route=attempt['route'], request_t=attempt['request_t'], motion_t=start,
+                        end_t=end, outcome=outcome))
+  return results
+
+
 def summarize(rows):
   """Do not treat truncated data, manual departures, or stale services as success."""
   results = []
@@ -86,7 +129,7 @@ def extract(paths):
   from openpilot.cereal import log
   from opendbc.can import CANParser
 
-  rows, errors, changes = [], [], []
+  rows, errors, changes, diagnostics, control_changes = [], [], [], [], []
   commits = set()
   counts = collections.Counter()
   route = None
@@ -110,6 +153,10 @@ def extract(paths):
         kind = e.which()
         if kind == 'initData':
           commits.add(e.initData.gitCommit)
+        elif kind == 'logMessage':
+          payload = parse_diagnostic(e.logMessage)
+          if payload is not None:
+            diagnostics.append(dict(route=route, segment=path.parent.name, log_t=t, payload=payload))
         elif kind == 'can':
           packets = [(m.address, m.dat, m.src) for m in e.can
                      if m.address in MESSAGES and m.src in parsers]
@@ -136,18 +183,26 @@ def extract(paths):
                   last_values[key] = flags
         elif kind == 'carState':
           c = e.carState
-          service['cs'] = (t, {'v': c.vEgo, 'brake': c.brakePressed, 'gas': c.gasPressed,
+          service['cs'] = (t, {'v': c.vEgo, 'estimated_accel': c.aEgo, 'brake': c.brakePressed, 'gas': c.gasPressed,
             'hold': c.brakeHoldActive, 'gear': str(c.gearShifter),
             'canValid': c.canValid, 'parkingBrake': c.parkingBrake,
             'cruise': c.cruiseState.to_dict(), 'softHold': c.softHoldActive})
         elif kind == 'longitudinalPlan':
           p = e.longitudinalPlan
-          service['plan'] = (t, {'should_stop': p.shouldStop, 'target': p.aTarget})
-        elif kind == 'carControl' and t - last_sample >= .099:
+          service['plan'] = (t, {'should_stop': p.shouldStop, 'target': p.aTarget, 'plan_has_lead': p.hasLead})
+        elif kind == 'carControl':
+          c = e.carControl
+          flags = dict(enabled=bool(c.enabled), active=bool(c.longActive), override=bool(c.cruiseControl.override),
+                       state=str(c.actuators.longControlState), positive_request=c.actuators.accel > 0,
+                       lead_visible=bool(c.hudControl.leadVisible), departing_lead=c.hudControl.leadRelSpeed > 0)
+          if flags != last_values.get('carControl'):
+            control_changes.append(dict(route=route, t=t, flags=flags, request=c.actuators.accel, jerk=c.actuators.jerk))
+            last_values['carControl'] = flags
+          if t - last_sample < .099:
+            continue
           if 'cs' not in service or 'plan' not in service:
             continue
           last_sample = t
-          c = e.carControl
           signals = {}
           for key, received in seen.items():
             age = t - received
@@ -158,14 +213,20 @@ def extract(paths):
             'cs_age': t - service['cs'][0], 'plan_age': t - service['plan'][0],
             **service['cs'][1], **service['plan'][1], 'active': c.longActive,
             'state': str(c.actuators.longControlState), 'request': c.actuators.accel,
+            'request_jerk': c.actuators.jerk, 'enabled': c.enabled, 'override': c.cruiseControl.override,
+            'hud_lead_visible': c.hudControl.leadVisible, 'hud_lead_distance': c.hudControl.leadDistance,
+            'hud_lead_relative_speed': c.hudControl.leadRelSpeed,
             'signals': signals})
     except Exception as exc:
       errors.append({'file': str(path), 'error': repr(exc)})
       # Never carry stale parser/service state through an unreadable segment.
       route = None
-  return {'schema': 1, 'commits': sorted(commits), 'rows': rows, 'flag_changes': changes,
+  departures = summarize(rows)
+  return {'schema': 2, 'commits': sorted(commits), 'rows': rows, 'flag_changes': changes,
           'received_frame_counts': dict(counts), 'errors': errors,
-          'departures': summarize(rows)}
+          'diagnostics': diagnostics, 'diagnostic_source_counts': dict(collections.Counter(d['payload'].get('source') for d in diagnostics)),
+          'control_changes': control_changes,
+          'departures': departures, 'motion_followups': motion_followups(rows, departures)}
 
 
 def main():
