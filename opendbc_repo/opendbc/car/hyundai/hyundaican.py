@@ -1,5 +1,4 @@
 import copy
-from opendbc.car import structs
 from opendbc.car.crc import CRC8J1850, mk_crc8_fun
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
@@ -154,7 +153,7 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   }
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
-def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode, long_active=False):
+def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -217,18 +216,7 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
       and scc12_acc_mode == 1 and soft_hold_active == 0 and accel < 0
       and not CS.out.brakePressed and not CS.out.gasPressed
     )
-    # Owner-requested continuous departure trial, not a one-frame pulse.
-    # Assert only while normal control requests positive acceleration near
-    # standstill. Vehicle response is unverified; do not change mode or aReq.
-    casper_departure = (
-      CS.CP.carFingerprint == CAR.HYUNDAI_CASPER and CS.CP.openpilotLongitudinalControl
-      and enabled and long_active and cruise_available and not stopping and accel > 0
-      and scc12_acc_mode == 1 and scc14_acc_mode == 1 and CS.scc14 is not None
-      and CS.out.canValid and CS.out.gearShifter == structs.CarState.GearShifter.drive
-      and abs(CS.out.vEgo) < 0.3 and soft_hold_active == 0
-      and not CS.out.brakePressed and not CS.out.gasPressed and not CS.out.parkingBrake
-    )
-    values["StopReq"] = 1 if casper_departure else 0 if casper_decel_stop else stop_req
+    values["StopReq"] = 0 if casper_decel_stop else stop_req
     values["aReqRaw"] = accel
     values["aReqValue"] = accel
     values["ACCFailInfo"] = 0

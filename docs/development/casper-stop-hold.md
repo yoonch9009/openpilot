@@ -210,7 +210,7 @@ not produce departure before driver intervention. This trial is now withdrawn;
 SCC14 comfort bands use the original jerk helper values again. The offline
 analysis tool remains available.
 
-## Owner-requested continuous departure StopReq trial (2026-09-22)
+## Owner-requested continuous departure StopReq trial (withdrawn 2026-09-22)
 
 At the owner's explicit request, after stopping further route-log investigation,
 this trial keeps StopReq=1 on every eligible SCC12 transmit tick during a
@@ -234,3 +234,23 @@ across 250 consecutive transmit calls, repeated cycles, return to normal handlin
 on movement/intervention, unchanged other fields, and checksum integrity. They do
 not simulate the ECU or prove standstill/departure behavior. No new driving-log
 replay is part of this change; the owner explicitly asked to stop that analysis.
+
+
+## Restore ordinary departure StopReq handling (2026-09-22)
+
+The owner requested withdrawal of the continuous departure assertion after the
+vehicle briefly moved and then nearly stopped again. Restore the pre-trial
+Hyundai controller and encoder from 72bce11: negative-acceleration normal Casper
+stopping retains StopReq=0, and normal non-stopping departure also uses StopReq=0.
+Pedal/override/soft-hold and other platform behavior keep the original handling;
+this is not an unconditional override of every StopReq field in every mode.
+The ineffective comfort-band trial remains withdrawn and the AVH interlock stays
+restored. Keep the offline diagnostic tool and owner-selected settings unchanged.
+
+The new regression specifically holds a positive departure request across many
+transmit calls, crosses 0.3 m/s in both directions, and returns to stopping. It
+checks that the withdrawn trial cannot reassert StopReq during departure and
+that the checksum and other bytes match the ordinary encoder. This restoration
+is not a claim that the unresolved restart problem is fixed. No pedal-signal
+spoofing, forced override, stronger acceleration, or new release mechanism is
+included in this change.

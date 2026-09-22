@@ -31,7 +31,7 @@ def make_state(platform=CAR.HYUNDAI_CASPER):
 
 
 def encode(module, cs, **overrides):
-  args = dict(enabled=True, accel=-0.5, stopping=True, long_override=False, idx=7, soft_hold_mode=0, long_active=True)
+  args = dict(enabled=True, accel=-0.5, stopping=True, long_override=False, idx=7, soft_hold_mode=0)
   args.update(overrides)
   return module.create_acc_commands_scc(
     CANPacker('hyundai_kia_generic'), **args,
