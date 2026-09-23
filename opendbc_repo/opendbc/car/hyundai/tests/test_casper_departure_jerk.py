@@ -140,3 +140,11 @@ def test_feedback_uses_received_tcs13_and_expires_when_bus_stops():
   assert casper_brake_control_active(cp)
   cp.update([1_240_000_000, []])
   assert not casper_brake_control_active(cp)
+
+
+def test_no_tcs13_timestamp_during_parser_startup_disables_trial():
+  # The real card process receives an empty timestamp map before first CAN.
+  cp = NS(ts_nanos={}, _last_update_nanos=0, bus_timeout=False, vl={'TCS13': {'DCEnable': 1}})
+  assert not casper_brake_control_active(cp)
+  cp.ts_nanos['TCS13'] = {}
+  assert not casper_brake_control_active(cp)

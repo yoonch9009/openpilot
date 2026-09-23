@@ -59,7 +59,7 @@ LEGACY_LFA_BUTTON_ALT_ADDR = 0x416
 
 def casper_brake_control_active(cp) -> bool:
   """Use fresh TCS13 feedback only; DCEnable is not a pressure measurement."""
-  timestamp = cp.ts_nanos["TCS13"]["DCEnable"]
+  timestamp = cp.ts_nanos.get("TCS13", {}).get("DCEnable", 0)
   age = cp._last_update_nanos - timestamp
   return bool(timestamp > 0 and 0 <= age <= 100_000_000 and not cp.bus_timeout
               and cp.vl["TCS13"]["DCEnable"] == 1)
@@ -450,7 +450,7 @@ class CarState(CarStateBase):
     cp_cruise = cp_cam if self.CP.flags & HyundaiFlags.CAMERA_SCC else cp
     self.casper_brake_control_active = self.CP.carFingerprint == CAR.HYUNDAI_CASPER and casper_brake_control_active(cp)
     if self.CP.carFingerprint == CAR.HYUNDAI_CASPER:
-      self.casper_tcs13_mono_ns = cp.ts_nanos["TCS13"]["DCEnable"]
+      self.casper_tcs13_mono_ns = cp.ts_nanos.get("TCS13", {}).get("DCEnable", 0)
     self.is_metric = cp.vl["CLU11"]["CF_Clu_SPEED_UNIT"] == 0
     speed_conv = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
