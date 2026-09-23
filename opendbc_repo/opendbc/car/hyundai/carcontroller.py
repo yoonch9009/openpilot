@@ -8,6 +8,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
+from opendbc.car.hyundai.casper_handoff import CasperSccHandoff
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -178,6 +179,7 @@ def apply_steer_angle_limits_physics(desired_sw_deg: float,
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     self.casper_diagnostics = CasperDiagnostics('scc') if CP.carFingerprint == CAR.HYUNDAI_CASPER else None
+    self.casper_handoff = CasperSccHandoff() if CP.carFingerprint == CAR.HYUNDAI_CASPER else None
     super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
@@ -586,6 +588,22 @@ class CarController(CarControllerBase):
       if self.frame % 2 == 0 and self.CP.openpilotLongitudinalControl:
         self.hyundai_jerk.make_jerk(self.CP, CS, accel, actuators, hud_control)
         self.hyundai_jerk.check_carrot_cruise(CC, CS, hud_control, stopping, accel, actuators.aTarget)
+        handoff = False
+        if camera_scc and self.casper_handoff is not None:
+          ready = (CC.enabled and CC.longActive and actuators.longControlState in (LongCtrlState.stopping, LongCtrlState.pid)
+                   and CS.scc11 is not None and CS.scc12 is not None and CS.scc14 is not None
+                   and CS.out.canValid and not CS.out.canTimeout and CS.out.cruiseState.available
+                   and CS.out.gearShifter == structs.CarState.GearShifter.drive
+                   and not CS.out.accFaulted and not CC.cruiseControl.override
+                   and not CS.out.brakePressed and not CS.out.gasPressed
+                   and not CS.out.parkingBrake and not CS.out.brakeHoldActive
+                   and CS.softHoldActive == 0 and CS.paddle_button_prev == 0
+                   and self.hyundai_jerk.carrot_cruise == 0)
+          lead_departing = (hud_control.leadVisible and hud_control.leadDistance >= 3.0
+                            and hud_control.leadRelSpeed >= .5)
+          handoff = self.casper_handoff.update(
+            now_nanos, ready, stopping, accel, CS.out.vEgo, lead_departing,
+            getattr(CS, 'casper_brake_control_active', False))
         #jerk = 3.0 if actuators.longControlState == LongCtrlState.pid else 1.0
         use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
         if camera_scc:
@@ -594,7 +612,7 @@ class CarController(CarControllerBase):
                                                           hud_control, set_speed_in_units, stopping,
                                                           CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode,
                                                           long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid,
-                                                          diagnostics=self.casper_diagnostics))
+                                                          diagnostics=self.casper_diagnostics, casper_handoff=handoff))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,

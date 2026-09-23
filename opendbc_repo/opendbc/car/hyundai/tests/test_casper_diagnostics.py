@@ -56,7 +56,7 @@ def test_logging_cannot_change_any_can_byte_or_input(mode):
   assert cs == before
   r = records[0]
   if mode == 'eligible':
-    assert r['jerk_changed'] and not r['blocked_by']
+    assert not r['jerk_changed'] and not r['blocked_by']
     assert r['request_accel'] == .2 and r['stop_req'] == 0
   elif mode == 'high_jerk':
     assert not r['jerk_changed'] and r['floor_already_met']

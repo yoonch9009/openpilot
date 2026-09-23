@@ -1,5 +1,4 @@
 import copy
-import math
 from opendbc.car import structs
 from opendbc.car.crc import CRC8J1850, mk_crc8_fun
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
@@ -155,28 +154,8 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   }
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
-def casper_departure_jerk_upper(CS, enabled, long_active, stopping, accel, long_override, hud_control, jerk_upper):
-  # Trial: raise only a low upper-jerk allowance while a moving lead requests
-  # departure but fresh TCS13 feedback still reports brake control. Never raise
-  # acceleration, assert StopReq, or reduce an already higher jerk allowance.
-  eligible = (
-    CS.CP.carFingerprint == CAR.HYUNDAI_CASPER and CS.CP.openpilotLongitudinalControl
-    and enabled and long_active and not stopping and not long_override
-    and math.isfinite(accel) and accel > 0 and math.isfinite(jerk_upper)
-    and getattr(CS, "casper_brake_control_active", False)
-    and CS.out.canValid and CS.out.standstill and abs(CS.out.vEgo) < 0.1
-    and CS.out.gearShifter == structs.CarState.GearShifter.drive
-    and CS.out.cruiseState.available and not CS.out.accFaulted
-    and not CS.out.brakePressed and not CS.out.gasPressed
-    and not CS.out.parkingBrake and not CS.out.brakeHoldActive
-    and CS.softHoldActive == 0 and CS.scc12 is not None
-    and hud_control.leadVisible and hud_control.leadDistance > 0 and hud_control.leadRelSpeed > 0
-  )
-  return max(jerk_upper, 1.0) if eligible else jerk_upper
-
-
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode,
-                            long_active=False, diagnostics=None):
+                            long_active=False, diagnostics=None, casper_handoff=False):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -209,6 +188,23 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
   else:
     scc12_acc_mode = 0
     scc14_acc_mode = 4
+
+  handoff_active = (casper_handoff and CS.CP.carFingerprint == CAR.HYUNDAI_CASPER
+                    and CS.CP.openpilotLongitudinalControl
+                    and enabled and long_active and not stopping and not long_override
+                    and scc12_acc_mode == 1 and scc14_acc_mode == 1
+                    and CS.out.canValid and not getattr(CS.out, 'canTimeout', False)
+                    and CS.out.standstill and abs(CS.out.vEgo) < .1
+                    and CS.out.gearShifter == structs.CarState.GearShifter.drive
+                    and CS.out.cruiseState.available and not CS.out.accFaulted
+                    and not CS.out.brakePressed and not CS.out.gasPressed
+                    and not CS.out.parkingBrake and not CS.out.brakeHoldActive
+                    and soft_hold_active == 0 and CS.scc12 is not None and CS.scc14 is not None
+                    and getattr(CS, 'casper_brake_control_active', False)
+                    and hud_control.leadVisible and hud_control.leadDistance >= 3.0
+                    and hud_control.leadRelSpeed >= .5 and 0 < accel <= .8)
+  if handoff_active:
+    scc12_acc_mode = scc14_acc_mode = 2
 
   warning_front = False
 
@@ -257,9 +253,7 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
     values = copy.copy(CS.scc14)
     values["ComfortBandUpper"] = jerk.cb_upper
     values["ComfortBandLower"] = jerk.cb_lower
-    values["JerkUpperLimit"] = casper_departure_jerk_upper(
-      CS, long_enabled and scc12_acc_mode == 1 and scc14_acc_mode == 1, long_active,
-      stopping, accel, long_override, hud_control, jerk.jerk_u)
+    values["JerkUpperLimit"] = jerk.jerk_u
     values["JerkLowerLimit"] = jerk.jerk_l if long_enabled else 0 # for KONA test
     values["ACCMode"] = scc14_acc_mode #2 if enabled and long_override else 1 if long_enabled else 4 # stock will always be 4 instead of 0 after first disengage
     values["ObjGap"] = objGap #2 if hud_control.leadVisible else 0 # 5: >30, m, 4: 25-30 m, 3: 20-25 m, 2: < 20 m, 0: no lead
@@ -271,7 +265,8 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
       upper = values["JerkUpperLimit"]
       diagnostics.record(CS.out.vEgo, lambda: scc_snapshot(
         CS, long_enabled, long_active, stopping, accel, long_override, hud_control, jerk,
-        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req))
+        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req,
+        handoff_active))
 
   if CS.fca11 is not None and suppress_casper_ev_fca: # CASPER_EV의 경우 FCA11에서 fail이 간헐적 발생함.. 그냥막자.. 원인불명..
     values = suppress_casper_ev_fca11_fault(copy.copy(CS.fca11))

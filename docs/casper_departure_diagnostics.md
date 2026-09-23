@@ -1,8 +1,9 @@
 # Casper departure diagnostics
 
-These are observations, not additional control logic. The existing jerk-floor
-trial remains unchanged. No acceleration, StopReq, lead-selection, hold, or
-state-machine behavior is changed by this instrumentation.
+The diagnostic records are observations. The separate Casper handoff trial
+changes only the SCC12/SCC14 ACCMode pair for one bounded interval after a
+following stop. The failed jerk-floor trial was withdrawn. The diagnostic
+producer itself does not supply control inputs.
 
 The gasoline HYUNDAI_CASPER emits structured `logMessage` records with
 `event=casper_departure_diagnostic`, `schema=1`. The producers are `controlsd`
@@ -14,10 +15,13 @@ contained snapshot/transport exceptions, not silent IPC drops.
 
 ## Questions addressed
 
-1. **Jerk trial:** SCC snapshots contain the actual pre-packing upper limit
-   before/after correction, floor-already-met flag and failed eligibility checks.
-   TCS13 publication time allows checking feedback age. DCEnable is not brake
-   pressure. The gate's long_active field includes the caller's PID-state gate.
+1. **Casper handoff trial:** SCC snapshots contain the transmitted ACCMode pair,
+   `handoff_active`, pre-packing acceleration and jerk, and eligibility checks.
+   The failed jerk-floor change was withdrawn; upper jerk now retains its
+   original calculation. TCS13 publication time allows checking feedback age.
+   DCEnable is not brake pressure. The gate's long_active field includes the
+   caller's PID-state gate. The older jerk/floor fields remain in the diagnostic
+   schema for comparisons with previous recordings.
 2. **Lead consistency:** Control snapshots contain plan hasLead, current radar
    lead and transmitted HUD lead fields, alongside service publication times,
    validity and alive flags. These are publication times, not sensor capture
@@ -32,7 +36,12 @@ contained snapshot/transport exceptions, not silent IPC drops.
    Confirm final quantized transmitted values against original CAN frames;
    a pre-packing record is not an ECU acceptance acknowledgement.
 
-No changes to candidates 2, 3 or 4 are enabled by collecting these fields.
+Only a single bounded SCC mode 1→2→1 trial is enabled for the gasoline Casper
+after a verified following stop and departing lead. StopReq and the acceleration
+request remain unchanged. At most one trial occurs until the vehicle has
+reached 1 m/s again; driver input, stale CAN, lost lead or unexpected motion
+immediately ends the trial. Other cars and stock-longitudinal configurations
+do not enter this branch. It is a test, not a verified restart fix.
 
 ## Extraction
 

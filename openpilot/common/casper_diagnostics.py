@@ -56,7 +56,7 @@ def control_snapshot(sm, CS, CC, publish_ns):
     parking_brake=bool(CS.parkingBrake), brake_hold=bool(CS.brakeHoldActive))
 
 
-def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk, upper, mode12, mode14, stop_req):
+def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk, upper, mode12, mode14, stop_req, handoff_active=False):
   from opendbc.car import structs
   checks = dict(enabled=bool(enabled), long_active=bool(long_active), not_stopping=not stopping,
                 finite_requests=math.isfinite(accel) and math.isfinite(jerk.jerk_u),
@@ -69,9 +69,10 @@ def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk,
                 no_brake_hold=not CS.out.brakeHoldActive, no_soft_hold=CS.softHoldActive == 0,
                 scc12_present=CS.scc12 is not None, lead_visible=bool(hud.leadVisible),
                 positive_lead_distance=hud.leadDistance > 0, departing_lead=hud.leadRelSpeed > 0,
-                active_modes=mode12 == 1 and mode14 == 1)
+                active_modes=(mode12 == 1 and mode14 == 1) or (handoff_active and mode12 == 2 and mode14 == 2))
   return dict(checks=checks, blocked_by=[name for name, ok in checks.items() if not ok],
               jerk_before=float(jerk.jerk_u), jerk_after=float(upper), jerk_changed=upper != jerk.jerk_u,
+              handoff_active=bool(handoff_active),
               floor_already_met=jerk.jerk_u >= 1.0,
               jerk_lower=float(jerk.jerk_l), comfort_upper=float(jerk.cb_upper), comfort_lower=float(jerk.cb_lower),
               request_accel=float(accel), stop_req=int(stop_req), mode12=int(mode12), mode14=int(mode14),

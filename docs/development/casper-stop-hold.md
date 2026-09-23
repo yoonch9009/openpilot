@@ -254,3 +254,26 @@ that the checksum and other bytes match the ordinary encoder. This restoration
 is not a claim that the unresolved restart problem is fixed. No pedal-signal
 spoofing, forced override, stronger acceleration, or new release mechanism is
 included in this change.
+
+## Bounded SCC mode handoff trial (2026-09-23)
+
+The owner reported that the Casper-specific jerk-floor experiment transmitted
+the intended SCC14 value but did not restore automatic departure. The failed
+jerk-floor override is removed; ordinary HyundaiJerk output is preserved.
+
+This new, unvalidated experiment tracks a real negative-request following
+stop, requires at least one second stationary, then requires a moving lead and
+a sustained small positive request for 250 ms. On gasoline HYUNDAI_CASPER
+classic camera-SCC only, it sends SCC12 and SCC14 ACCMode=2 for at most
+550 ms, then returns to their normal ACCMode=1. StopReq, SCC acceleration
+request, jerk, comfort bands and other CAN messages are unchanged. The mode
+handoff is one attempt per stop; it cannot re-arm after a brief creep. Driver
+pedals, invalid/stale CAN, cruise cancellation, missing lead, unexpected motion,
+parking brake, AutoHold and soft hold prevent or end the attempt.
+
+The observed physical accelerator press also changed engine-side signals, so
+this software mode transition is **not** equivalent to a pedal input and may
+do nothing. Its timing and output are checked in offline regression tests, not
+with a vehicle ECU model. A road result must include lead movement, the exact
+sent SCC frames, TCS13 feedback, vehicle speed and driver intervention before
+claiming success. The proven StopReq=0 negative-deceleration stop remains.
