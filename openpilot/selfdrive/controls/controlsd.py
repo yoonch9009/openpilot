@@ -174,7 +174,14 @@ class Controls:
     # accel PID loop
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     t_since_plan = (self.sm.frame - self.sm.recv_frame['longitudinalPlan']) * DT_CTRL
-    accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan, self.sm['radarState'])
+    launch_inputs_valid = True
+    if self.LoC.casper_launch is not None:
+      now_ns = time.monotonic_ns()
+      launch_sources = ('carState', 'longitudinalPlan', 'radarState')
+      launch_inputs_valid = self.sm.all_checks(launch_sources) and all(
+        0 <= now_ns - self.sm.logMonoTime[s] <= 300_000_000 for s in launch_sources)
+    accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan,
+                                         self.sm['radarState'], launch_inputs_valid=launch_inputs_valid)
     actuators.longControlState = self.LoC.long_control_state
     actuators.accel = float(accel)
     actuators.aTarget = float(aTarget)
@@ -448,7 +455,9 @@ class Controls:
     cc_send.carControl = CC
     self.pm.send('carControl', cc_send)
     if getattr(self, 'casper_diagnostics', None) is not None:
-      self.casper_diagnostics.record(CS.vEgo, lambda: control_snapshot(self.sm, CS, CC, cc_send.logMonoTime))
+      self.casper_diagnostics.record(CS.vEgo, lambda: control_snapshot(
+        self.sm, CS, CC, cc_send.logMonoTime,
+        self.LoC.casper_launch.correction if self.LoC.casper_launch is not None else 0.0))
 
   def run(self):
     rk = Ratekeeper(100, print_delay_threshold=None)

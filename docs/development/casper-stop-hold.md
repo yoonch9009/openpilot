@@ -255,7 +255,7 @@ is not a claim that the unresolved restart problem is fixed. No pedal-signal
 spoofing, forced override, stronger acceleration, or new release mechanism is
 included in this change.
 
-## Bounded SCC mode handoff trial (2026-09-23)
+## Bounded SCC mode handoff trial (2026-09-23, withdrawn)
 
 The owner reported that the Casper-specific jerk-floor experiment transmitted
 the intended SCC14 value but did not restore automatic departure. The failed
@@ -277,3 +277,26 @@ do nothing. Its timing and output are checked in offline regression tests, not
 with a vehicle ECU model. A road result must include lead movement, the exact
 sent SCC frames, TCS13 feedback, vehicle speed and driver intervention before
 claiming success. The proven StopReq=0 negative-deceleration stop remains.
+
+## Owned cancel/resume restart (2026-09-24)
+
+The owner found that steering-wheel CANCEL followed by RES/SET permitted
+departure. Three recorded cycles disabled CC.enabled/longActive for about
+0.54–0.69 seconds, reset LongControl to zero/off, and sent SCC12 mode0 and
+SCC14 mode4 before returning to mode1. This differs from the withdrawn mode2
+encoder-only trial. The new implementation requests the existing cancel/enable
+events in selfdrived and waits for fresh control OFF and planner acknowledgments.
+It never clears a driver's cancel latch or bypasses no-entry events. Any real
+button/pedal intervention, stale source, fault, or replaced/lost lead invalidates
+the owned automatic episode; it never repeatedly toggles at the same stop.
+
+The observed post-resume controller could request less than the positive plan
+target because its reset velocity trajectory lagged the moving car. A bounded
+three-second Casper-only correction recovers at most 0.2m/s² of this shortfall
+once moving, ramps up at 0.5m/s³, requires measured acceleration below target,
+and cannot exceed the target or normal actuator limits. Plan/radar/vehicle data
+must be fresh. It is not a fixed launch acceleration or a standstill boost.
+
+Software regressions and recorded input comparison do not establish repeatable
+ECU acceptance. The owner's manual OFF/ON result is the basis for this experiment;
+automatic OFF/ON still requires vehicle validation.

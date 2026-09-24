@@ -5,7 +5,8 @@ from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N
 from openpilot.common.pid import PIDController
 from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.params import Params
-from opendbc.car.hyundai.values import HyundaiFlags
+from opendbc.car.hyundai.values import HyundaiFlags, CAR
+from openpilot.selfdrive.controls.lib.casper_launch import CasperReengageAccel
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
@@ -68,6 +69,9 @@ class LongControl:
                              (CP.longitudinalTuning.kiBP, CP.longitudinalTuning.kiV),
                              k_f=CP.longitudinalTuning.kf, rate=1 / DT_CTRL)
     self.last_output_accel = 0.0
+    self.casper_launch = (CasperReengageAccel() if getattr(CP, 'carFingerprint', None) == CAR.HYUNDAI_CASPER
+                          and CP.openpilotLongitudinalControl and CP.flags & HyundaiFlags.CAMERA_SCC
+                          and not CP.flags & HyundaiFlags.CANFD else None)
 
 
     self.params = Params()
@@ -107,7 +111,7 @@ class LongControl:
   def reset(self):
     self.pid.reset()
 
-  def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState):
+  def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState, launch_inputs_valid=True):
 
     soft_hold_active = CS.softHoldActive > 0
     a_target_ff = long_plan.aTarget
@@ -162,5 +166,14 @@ class LongControl:
       output_accel = self.pid.update(error, speed=CS.vEgo,
                                      feedforward=a_target_ff)
 
+    if self.casper_launch is not None:
+      lead = radarState.leadOne
+      output_accel = self.casper_launch.update(
+        active, should_stop or self.long_control_state == LongCtrlState.stopping, CS.vEgo, CS.aEgo,
+        a_target_ff, v_target_now, float(output_accel), lead.status, lead.dRel, lead.vRel,
+        CS.gasPressed or CS.brakePressed,
+        launch_inputs_valid and 0 <= t_since_plan <= .3 and CS.canValid and not CS.canTimeout and not CS.accFaulted
+        and CS.gearShifter == car.CarState.GearShifter.drive
+        and not CS.parkingBrake and not CS.brakeHoldActive and CS.softHoldActive == 0)
     self.last_output_accel = np.clip(output_accel, accel_limits[0], accel_limits[1])
     return self.last_output_accel, a_target_ff, j_target_now

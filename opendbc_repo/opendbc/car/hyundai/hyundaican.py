@@ -1,5 +1,4 @@
 import copy
-from opendbc.car import structs
 from opendbc.car.crc import CRC8J1850, mk_crc8_fun
 from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
@@ -155,7 +154,7 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode,
-                            long_active=False, diagnostics=None, casper_handoff=False):
+                            long_active=False, diagnostics=None):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -188,23 +187,6 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
   else:
     scc12_acc_mode = 0
     scc14_acc_mode = 4
-
-  handoff_active = (casper_handoff and CS.CP.carFingerprint == CAR.HYUNDAI_CASPER
-                    and CS.CP.openpilotLongitudinalControl
-                    and enabled and long_active and not stopping and not long_override
-                    and scc12_acc_mode == 1 and scc14_acc_mode == 1
-                    and CS.out.canValid and not getattr(CS.out, 'canTimeout', False)
-                    and CS.out.standstill and abs(CS.out.vEgo) < .1
-                    and CS.out.gearShifter == structs.CarState.GearShifter.drive
-                    and CS.out.cruiseState.available and not CS.out.accFaulted
-                    and not CS.out.brakePressed and not CS.out.gasPressed
-                    and not CS.out.parkingBrake and not CS.out.brakeHoldActive
-                    and soft_hold_active == 0 and CS.scc12 is not None and CS.scc14 is not None
-                    and getattr(CS, 'casper_brake_control_active', False)
-                    and hud_control.leadVisible and hud_control.leadDistance >= 3.0
-                    and hud_control.leadRelSpeed >= .5 and 0 < accel <= .8)
-  if handoff_active:
-    scc12_acc_mode = scc14_acc_mode = 2
 
   warning_front = False
 
@@ -265,8 +247,7 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
       upper = values["JerkUpperLimit"]
       diagnostics.record(CS.out.vEgo, lambda: scc_snapshot(
         CS, long_enabled, long_active, stopping, accel, long_override, hud_control, jerk,
-        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req,
-        handoff_active))
+        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req))
 
   if CS.fca11 is not None and suppress_casper_ev_fca: # CASPER_EV의 경우 FCA11에서 fail이 간헐적 발생함.. 그냥막자.. 원인불명..
     values = suppress_casper_ev_fca11_fault(copy.copy(CS.fca11))

@@ -37,7 +37,7 @@ class CasperDiagnostics:
       self.errors += 1
 
 
-def control_snapshot(sm, CS, CC, publish_ns):
+def control_snapshot(sm, CS, CC, publish_ns, launch_correction=0.0):
   radar = sm['radarState'].leadOne
   plan = sm['longitudinalPlan']
   return dict(
@@ -51,6 +51,7 @@ def control_snapshot(sm, CS, CC, publish_ns):
                   relative_speed=float(CC.hudControl.leadRelSpeed)),
     enabled=bool(CC.enabled), long_active=bool(CC.longActive), override=bool(CC.cruiseControl.override),
     state=str(CC.actuators.longControlState), request_accel=float(CC.actuators.accel),
+    launch_accel_correction=float(launch_correction),
     request_jerk=float(CC.actuators.jerk), speed=float(CS.vEgo), estimated_accel=float(CS.aEgo), standstill=bool(CS.standstill),
     gas=bool(CS.gasPressed), brake=bool(CS.brakePressed), gear=str(CS.gearShifter),
     parking_brake=bool(CS.parkingBrake), brake_hold=bool(CS.brakeHoldActive))

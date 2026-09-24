@@ -2,6 +2,7 @@
 import os
 import time
 import threading
+import math
 
 import openpilot.cereal.messaging as messaging
 
@@ -14,6 +15,8 @@ from openpilot.common.realtime import config_realtime_process, Priority, Ratekee
 from openpilot.common.swaglog import cloudlog
 from openpilot.common.runtime_diagnostics import communication_snapshot
 from openpilot.common.gps import get_gps_location_service
+from openpilot.common.casper_diagnostics import CasperDiagnostics
+from opendbc.car.hyundai.values import CAR, HyundaiFlags
 
 from openpilot.selfdrive.car.car_specific import CarSpecificEvents
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
@@ -21,6 +24,7 @@ from openpilot.selfdrive.selfdrived.camera_config import get_camera_packets
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
+from openpilot.selfdrive.selfdrived.casper_restart import CasperCruiseRestart
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 from openpilot.selfdrive.controls.lib.cutin_alert import (
   CutinAlertCandidate,
@@ -116,6 +120,8 @@ class SelfdriveD:
       self.params.remove("ExperimentalMode")
 
     self.CS_prev = car.CarState.new_message()
+    self.casper_cs_mono_ns = 0
+    self.casper_cs_valid = False
     self.AM = AlertManager()
     self.events = Events()
 
@@ -140,6 +146,12 @@ class SelfdriveD:
     self.big_model_active = False
     self.big_model_ready_t = 0.0
     self.state_machine = StateMachine()
+    self.casper_restart = (CasperCruiseRestart() if self.CP.carFingerprint == CAR.HYUNDAI_CASPER
+                           and self.CP.openpilotLongitudinalControl and not self.CP.pcmCruise
+                           and self.CP.flags & HyundaiFlags.CAMERA_SCC
+                           and not self.CP.flags & HyundaiFlags.CANFD else None)
+    self.casper_restart_log = CasperDiagnostics('restart') if self.casper_restart is not None else None
+    self.casper_restart_lead = None
     self.rk = Ratekeeper(100, print_delay_threshold=None)
 
     self.atc_type_last = ""
@@ -509,6 +521,9 @@ class SelfdriveD:
   def data_sample(self):
     car_state = messaging.recv_one(self.car_state_sock)
     CS = car_state.carState if car_state else self.CS_prev
+    if car_state is not None:
+      self.casper_cs_mono_ns = int(car_state.logMonoTime)
+      self.casper_cs_valid = bool(car_state.valid)
 
     self.sm.update(0)
 
@@ -598,10 +613,74 @@ class SelfdriveD:
       self.pm.send('onroadEvents', ce_send)
     self.events_prev = self.events.names.copy()
 
+  def update_casper_restart(self, CS, now_ns):
+    restart = self.casper_restart
+    if restart is None:
+      return
+    cc, controls = self.sm['carControl'], self.sm['controlsState']
+    plan, lead = self.sm['longitudinalPlan'], self.sm['radarState'].leadOne
+    sources = ('carControl', 'controlsState', 'longitudinalPlan', 'radarState')
+    fresh = all(self.sm.alive[s] and self.sm.valid[s] and
+                0 <= now_ns - self.sm.logMonoTime[s] <= 300_000_000 for s in sources)
+    fresh = fresh and self.casper_cs_valid and 0 <= now_ns - self.casper_cs_mono_ns <= 100_000_000
+    blocked = any(self.events.contains(t) for t in
+                  (ET.USER_DISABLE, ET.IMMEDIATE_DISABLE, ET.SOFT_DISABLE, ET.NO_ENTRY,
+                   ET.PRE_ENABLE, ET.OVERRIDE_LONGITUDINAL))
+    user_input = bool(CS.buttonEvents) or CS.brakePressed or CS.gasPressed
+    lead_ok = (lead.status and math.isfinite(lead.dRel) and math.isfinite(lead.vRel)
+               and lead.dRel >= 2.0 and lead.vRel > .2)
+    lead_continuous = True
+    if not restart.confirm_ns and restart.phase != 'off':
+      self.casper_restart_lead = None
+    if lead_ok:
+      current_lead = (int(lead.radarTrackId), float(lead.dRel), int(self.sm.logMonoTime['radarState']))
+      if self.casper_restart_lead is not None:
+        previous_id, previous_distance, previous_time = self.casper_restart_lead
+        if current_lead[2] > previous_time:
+          changed_id = previous_id >= 0 and current_lead[0] >= 0 and previous_id != current_lead[0]
+          lead_continuous = not changed_id and abs(current_lead[1] - previous_distance) <= 1.0
+      self.casper_restart_lead = current_lead
+    healthy = (fresh and not blocked and CS.canValid and not CS.canTimeout
+               and CS.gearShifter == car.CarState.GearShifter.drive
+               and CS.cruiseState.available and not CS.accFaulted
+               and not CS.parkingBrake and not CS.brakeHoldActive and CS.softHoldActive == 0)
+    # While holding, a stationary lead is normal. Once we own OFF, continue
+    # only with a fresh departing lead; normal no-entry checks remain intact.
+    healthy = healthy and lead_continuous
+    if restart.phase == 'off':
+      healthy = healthy and lead_ok
+    stationary = math.isfinite(CS.vEgo) and abs(CS.vEgo) < .1
+    stopping = cc.longActive and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping and cc.actuators.accel < 0
+    departure = (cc.longActive and not plan.shouldStop and plan.hasLead and lead_ok
+                 and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.pid
+                 and cc.actuators.accel > 0)
+    off_ack = (not cc.enabled and not cc.longActive and abs(cc.actuators.accel) < .001
+               and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.off
+               and controls.longControlState == car.CarControl.Actuators.LongControlState.off
+               and self.sm.logMonoTime['carControl'] > restart.request_ns
+               and self.sm.logMonoTime['controlsState'] > restart.request_ns)
+    plan_after_off = bool(restart.ack_ns and self.sm.logMonoTime['longitudinalPlan'] > restart.ack_ns
+                          and controls.longitudinalPlanMonoTime > restart.ack_ns)
+    action = restart.update(now_ns, enabled=self.enabled, healthy=healthy, stationary=stationary,
+                            stopping=stopping, departure=departure, off_ack=off_ack,
+                            plan_after_off=plan_after_off, user_input=user_input,
+                            moving=math.isfinite(CS.vEgo) and CS.vEgo >= 1.0)
+    if action == 'off':
+      self.events.add(EventName.buttonCancel)
+    elif action == 'on':
+      self.events.add(EventName.buttonEnable)
+    self.casper_restart_log.record(CS.vEgo, lambda: dict(
+      phase=restart.phase, reason=restart.reason, action=action, enabled=self.enabled,
+      healthy=healthy, user_input=user_input, off_ack=off_ack, plan_after_off=plan_after_off,
+      car_state_mono_ns=self.casper_cs_mono_ns, lead_continuous=lead_continuous,
+      request_ns=restart.request_ns, ack_ns=restart.ack_ns, lead_distance=float(lead.dRel),
+      lead_relative_speed=float(lead.vRel)))
+
   def step(self):
     CS = self.data_sample()
     self.update_events(CS)
     if not self.CP.passive and self.initialized:
+      self.update_casper_restart(CS, time.monotonic_ns())
       self.enabled, self.active = self.state_machine.update(self.events)
     self.update_alerts(CS)
 

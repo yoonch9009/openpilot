@@ -1,13 +1,13 @@
 # Casper departure diagnostics
 
-The diagnostic records are observations. The separate Casper handoff trial
-changes only the SCC12/SCC14 ACCMode pair for one bounded interval after a
-following stop. The failed jerk-floor trial was withdrawn. The diagnostic
-producer itself does not supply control inputs.
+The diagnostic records are observations. The Casper mode-2 handoff trial and
+jerk-floor trial were withdrawn. The current restart uses the normal selfdrived
+cancel/enable event path so LongControl and the planner see an actual OFF period.
+The diagnostic producer itself does not supply control inputs.
 
 The gasoline HYUNDAI_CASPER emits structured `logMessage` records with
-`event=casper_departure_diagnostic`, `schema=1`. The producers are `controlsd`
-and `scc`. Each producer is limited to 10 Hz below 2 m/s and for five seconds
+`event=casper_departure_diagnostic`, `schema=1`. The producers are `controlsd`,
+`scc` and `restart`. Each producer is limited to 10 Hz below 2 m/s and for five seconds
 after leaving that speed range. The existing logmessaged nonblocking IPC path
 is used; control processes do not write diagnostic files. Capture is best
 effort. Sequence gaps can indicate lost records; diagnostic_errors counts
@@ -15,13 +15,11 @@ contained snapshot/transport exceptions, not silent IPC drops.
 
 ## Questions addressed
 
-1. **Casper handoff trial:** SCC snapshots contain the transmitted ACCMode pair,
-   `handoff_active`, pre-packing acceleration and jerk, and eligibility checks.
-   The failed jerk-floor change was withdrawn; upper jerk now retains its
-   original calculation. TCS13 publication time allows checking feedback age.
-   DCEnable is not brake pressure. The gate's long_active field includes the
-   caller's PID-state gate. The older jerk/floor fields remain in the diagnostic
-   schema for comparisons with previous recordings.
+1. **Casper restart:** `source=restart` records the owned OFF/ON phase, request
+   and acknowledgment timestamps, input freshness, lead continuity and abort
+   reason. SCC snapshots record pre-packing mode and requests. The old
+   `handoff_active` field stays false for compatibility with prior recordings.
+   DCEnable is not brake pressure.
 2. **Lead consistency:** Control snapshots contain plan hasLead, current radar
    lead and transmitted HUD lead fields, alongside service publication times,
    validity and alive flags. These are publication times, not sensor capture
@@ -33,15 +31,23 @@ contained snapshot/transport exceptions, not silent IPC drops.
    `motion_observed_for_5s` is an observation, not proof of normal or safe ACC.
 4. **Acceleration/jerk relationship:** Compare plan target, actuator request,
    SCC pre-packing request, upper/lower jerk, comfort bands and aEgo estimate.
+   `launch_accel_correction` records the bounded post-reenable tracking correction.
    Confirm final quantized transmitted values against original CAN frames;
    a pre-packing record is not an ECU acceptance acknowledgement.
 
-Only a single bounded SCC mode 1→2→1 trial is enabled for the gasoline Casper
-after a verified following stop and departing lead. StopReq and the acceleration
-request remain unchanged. At most one trial occurs until the vehicle has
-reached 1 m/s again; driver input, stale CAN, lost lead or unexpected motion
-immediately ends the trial. Other cars and stock-longitudinal configurations
-do not enter this branch. It is a test, not a verified restart fix.
+Only gasoline Casper with openpilot longitudinal control requests one automatic
+CANCEL/ENABLE episode after a genuine following stop and confirmed departing
+lead. Both carControl and controlsState must acknowledge OFF; after 550ms OFF,
+a newer plan received by controlsd is required before requesting enable through
+the normal no-entry checks. A real driver cancel, pedal, stale input, replaced
+lead or error invalidates the owned episode and cannot be automatically undone.
+Stock longitudinal and other cars are excluded. It remains a vehicle experiment.
+
+For three seconds after stopped re-engagement, a moving Casper can recover at
+most 0.2m/s² of acceleration lost to negative velocity error, with a 0.5m/s³
+rise limit. This is allowed only below 3m/s, behind a departing lead, and when
+estimated acceleration is below the positive plan target. It never exceeds the
+plan target or existing actuator limits, and never boosts a stationary vehicle.
 
 ## Extraction
 
