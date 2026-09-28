@@ -30,10 +30,10 @@ class TestCasperReengageAccel(unittest.TestCase):
     previous = 0.2
     for _ in range(60):
       result = self.step(target_accel=0.8)
-      self.assertLessEqual(result - previous, 0.01 + 1e-9)
-      self.assertLessEqual(result, 0.5 + 1e-9)
+      self.assertLessEqual(result - previous, 0.015 + 1e-9)
+      self.assertLessEqual(result, 0.6 + 1e-9)
       previous = result
-    self.assertAlmostEqual(previous, 0.5)
+    self.assertAlmostEqual(previous, 0.6)
     self.assertAlmostEqual(self.step(target_accel=0.23), 0.23)
     self.assertEqual(self.step(requested_accel=0.6), 0.6)
 

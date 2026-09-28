@@ -90,6 +90,6 @@ class CasperReengageAccel:
       self.correction = 0.0
       return requested_accel
 
-    desired = min(0.3, max(target_accel - requested_accel, 0.0), max(target_accel - measured_accel, 0.0))
-    self.correction = min(desired, self.correction + 1.0 * dt)
+    desired = min(0.4, max(target_accel - requested_accel, 0.0), max(target_accel - measured_accel, 0.0))
+    self.correction = min(desired, self.correction + 1.5 * dt)
     return requested_accel + self.correction

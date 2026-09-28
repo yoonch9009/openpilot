@@ -321,3 +321,17 @@ of at least 0.1m/s, with at most two seconds waiting after re-enable. Target,
 measured-shortfall and actuator caps remain; no stationary acceleration boost
 or SCC11/14/jerk encoder override is introduced. This does not eliminate the
 planner's own stop decision or raise its acceleration target.
+
+### Further owner-requested tuning, before another drive
+
+On 2026-09-28 the owner requested further response tuning before supplying a
+drive on a25c5a8. Confirmation is now 60ms (previously 100ms) and acknowledged
+OFF dwell 200ms (previously 300ms). This can remove up to another 140ms of
+software delay; when confirmation already overlaps planner readiness its
+reduction does not add to the benefit. The 200ms ECU interval remains unproven.
+
+The moving-only correction cap is now 0.4m/s² with a 1.5m/s³ rise limit. It
+continues to be capped by both positive target shortfall and measured
+acceleration shortfall, and by normal actuator limits. All other eligibility,
+three-second motion window, two-second motion wait and abort rules remain.
+These are bounded tuning candidates, not evidence of improved vehicle response.

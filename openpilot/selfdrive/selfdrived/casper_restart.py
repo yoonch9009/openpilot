@@ -3,8 +3,8 @@
 
 class CasperCruiseRestart:
   HOLD_NS = 1_000_000_000
-  CONFIRM_NS = 100_000_000
-  OFF_NS = 300_000_000
+  CONFIRM_NS = 60_000_000
+  OFF_NS = 200_000_000
   TIMEOUT_NS = 1_500_000_000
 
   def __init__(self):
