@@ -38,7 +38,7 @@ def setup():
   return sd, cs
 
 
-def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, driver_cancel=False):
+def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, driver_cancel=False, old_consumed_plan=False):
   sd.events.clear()
   if driver_cancel:
     sd.events.add(log.OnroadEvent.EventName.buttonCancel)
@@ -53,7 +53,7 @@ def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, dri
   cc.actuators.longControlState = state
   cc.actuators.accel = 0 if not sd.enabled else (.2 if departure else -.5)
   controls.longControlState = state
-  controls.longitudinalPlanMonoTime = sd.sm.logMonoTime['longitudinalPlan']
+  controls.longitudinalPlanMonoTime = sd.casper_restart.request_ns if old_consumed_plan else sd.sm.logMonoTime['longitudinalPlan']
   plan.hasLead = True
   plan.shouldStop = not departure or not sd.enabled
   sd.update_casper_restart(cs, now)
@@ -72,11 +72,22 @@ def test_binder_drives_full_state_machine_off_and_on_after_ack():
   sd, cs = setup()
   now = enter_owned_off(sd, cs)
   assert not sd.enabled
-  for i in range(1, 21):
-    tick(sd, cs, now + i * 10_000_000, departure=True)
-    assert not sd.enabled
-  tick(sd, cs, now + 210_000_000, departure=True)
+  tick(sd, cs, now + 10_000_000, departure=True)
+  assert not sd.enabled  # OFF acknowledged, but no plan newer than that ACK.
+  tick(sd, cs, now + 20_000_000, departure=True)
   assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
+
+
+def test_zero_dwell_still_waits_until_controller_consumes_post_off_plan():
+  sd, cs = setup()
+  now = enter_owned_off(sd, cs)
+  tick(sd, cs, now + 10_000_000, departure=True)
+  assert not sd.enabled
+  for i in range(2, 15):
+    tick(sd, cs, now + i * 10_000_000, departure=True, old_consumed_plan=True)
+    assert not sd.enabled
+  tick(sd, cs, now + 150_000_000, departure=True)
+  assert sd.enabled
 
 
 def test_moving_lead_waits_for_planner_and_controller_permission():

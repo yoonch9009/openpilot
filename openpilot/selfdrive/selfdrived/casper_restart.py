@@ -3,7 +3,7 @@
 
 class CasperCruiseRestart:
   HOLD_NS = 1_000_000_000
-  OFF_NS = 200_000_000
+  OFF_NS = 0  # Resume as soon as OFF and the post-OFF plan are acknowledged.
   TIMEOUT_NS = 1_500_000_000
 
   def __init__(self):

@@ -371,3 +371,13 @@ its departure evidence remains 0.10m range growth and positive lead/relative
 speed for 0.10s (reduced from 0.15m in ef2f3f7). That upstream filter is separate
 from the removed downstream confirmation. The historical FollowingStop latch
 added in 063259d was withdrawn in 1da960e and is not active.
+
+### Acknowledgment-only OFF duration
+
+The owner requested the minimum additional OFF delay. Fixed OFF dwell is now
+zero (previously 200ms); restart still waits for fresh zero/off carControl and
+controlsState acknowledgments and a plan published and consumed after that
+OFF acknowledgment, plus the existing departing-lead/no-entry checks. This is
+not an instantaneous toggle: process and plan cadence set the actual interval.
+It does not acknowledge the vehicle ECU's internal reset or prove the shorter
+interval is sufficient. Actual restart effectiveness requires a new vehicle test.

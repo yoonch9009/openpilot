@@ -41,12 +41,12 @@ class TestCasperCruiseRestart(unittest.TestCase):
     self.assertEqual(episode.tick(plan_after_off=True), 'on')
     self.assertEqual(episode.run(200, enabled=True, off_ack=False), [])
 
-  def test_off_dwell_is_measured_from_acknowledgement(self):
+  def test_no_fixed_dwell_after_required_acknowledgments(self):
     episode = Episode()
     episode.request_off()
-    episode.run(30)
-    self.assertEqual(episode.run(20, enabled=False, off_ack=True, plan_after_off=True), [])
-    self.assertEqual(episode.tick(), 'on')
+    self.assertEqual(episode.run(30, plan_after_off=True), [])
+    self.assertIsNone(episode.tick(enabled=False, off_ack=True, plan_after_off=False))
+    self.assertEqual(episode.tick(plan_after_off=True), 'on')
 
   def test_planner_permission_requests_off_without_extra_confirmation(self):
     episode = Episode()
@@ -71,8 +71,8 @@ class TestCasperCruiseRestart(unittest.TestCase):
   def test_cancel_at_shortened_resume_boundary_prevents_enable(self):
     episode = Episode()
     episode.request_off()
-    episode.run(20, enabled=False, off_ack=True, plan_after_off=True)
-    self.assertIsNone(episode.tick(user_input=True))
+    episode.tick(enabled=False, off_ack=True, plan_after_off=False)
+    self.assertIsNone(episode.tick(user_input=True, plan_after_off=True))
     self.assertEqual(episode.run(100, user_input=False), [])
 
   def test_stationary_engagement_without_prior_stop_does_not_cycle(self):
