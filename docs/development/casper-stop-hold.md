@@ -335,3 +335,13 @@ continues to be capped by both positive target shortfall and measured
 acceleration shortfall, and by normal actuator limits. All other eligibility,
 three-second motion window, two-second motion wait and abort rules remain.
 These are bounded tuning candidates, not evidence of improved vehicle response.
+
+### Remove the extra two-meter restart gate
+
+At the owner's request the automatic cancel/resume path no longer requires a
+fixed two-meter lead gap. A finite positive distance, departing relative speed,
+fresh continuous lead and the existing planner/controller departure permission
+are still required. This changes only eligibility for the owned restart cycle;
+it does not reduce the planner's following/stop distance. The separate moving
+acceleration correction retains its three-meter gate. No vehicle result yet
+establishes the effect of removing this redundant minimum-gap condition.

@@ -91,6 +91,35 @@ def test_moving_lead_confirmation_waits_for_planner_and_controller_permission():
   assert not sd.enabled and sd.casper_restart.phase == 'off'
 
 
+@pytest.mark.parametrize('distance', [0.5, 1.5, 1.99, 2.0])
+def test_positive_gap_below_two_meters_uses_normal_departure_permission(distance):
+  sd, cs = setup()
+  sd.sm['radarState'].leadOne.dRel = distance
+  for i in range(140):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+    assert sd.enabled  # A moving close lead never overrides a stop plan.
+  tick(sd, cs, 2_400_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'off'
+  for i in range(1, 22):
+    tick(sd, cs, 2_400_000_000 + i * 10_000_000, departure=True)
+  assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
+
+
+@pytest.mark.parametrize('distance', [0.0, -1.0, float('nan'), float('inf')])
+def test_invalid_gap_cannot_request_cancel_or_resume(distance):
+  sd, cs = setup()
+  sd.sm['radarState'].leadOne.dRel = distance
+  for i in range(180):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000, departure=i >= 120)
+  assert sd.enabled and sd.casper_restart.phase == 'holding'
+  sd, cs = setup()
+  now = enter_owned_off(sd, cs)
+  sd.sm['radarState'].leadOne.dRel = distance
+  for i in range(1, 40):
+    tick(sd, cs, now + i * 10_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
+
+
 @pytest.mark.parametrize('source', ['carControl', 'controlsState', 'longitudinalPlan', 'radarState', 'actual_car_state'])
 def test_stale_input_during_owned_off_never_auto_enables(source):
   sd, cs = setup()

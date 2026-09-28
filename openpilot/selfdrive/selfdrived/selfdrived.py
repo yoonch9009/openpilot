@@ -627,8 +627,10 @@ class SelfdriveD:
                   (ET.USER_DISABLE, ET.IMMEDIATE_DISABLE, ET.SOFT_DISABLE, ET.NO_ENTRY,
                    ET.PRE_ENABLE, ET.OVERRIDE_LONGITUDINAL))
     user_input = bool(CS.buttonEvents) or CS.brakePressed or CS.gasPressed
+    # Do not add a fixed gap threshold to the planner's departure permission.
+    # Nonpositive/nonfinite distance is invalid, not evidence of a moving lead.
     lead_ok = (lead.status and math.isfinite(lead.dRel) and math.isfinite(lead.vRel)
-               and lead.dRel >= 2.0 and lead.vRel > .2)
+               and lead.dRel > 0.0 and lead.vRel > .2)
     lead_continuous = True
     if not restart.confirm_ns and restart.phase != 'off':
       self.casper_restart_lead = None
