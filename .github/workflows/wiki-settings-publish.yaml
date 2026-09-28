@@ -20,6 +20,8 @@ concurrency:
 
 jobs:
   synchronize:
+    # Forks must initialize their Wiki before enabling automatic synchronization.
+    if: github.repository == 'ajouatom/openpilot' || vars.ENABLE_SETTINGS_WIKI_SYNC == 'true' || github.event_name == 'workflow_dispatch' || github.event_name == 'gollum'
     name: validate and synchronize Wiki
     runs-on: ubuntu-24.04
     timeout-minutes: 15
