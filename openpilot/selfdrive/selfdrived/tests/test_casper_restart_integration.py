@@ -79,16 +79,58 @@ def test_binder_drives_full_state_machine_off_and_on_after_ack():
   assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
 
 
-def test_moving_lead_confirmation_waits_for_planner_and_controller_permission():
+def test_moving_lead_waits_for_planner_and_controller_permission():
   sd, cs = setup()
   # The lead is already moving, but the planner continues to request stopping.
   for i in range(140):
     tick(sd, cs, 1_000_000_000 + i * 10_000_000)
     assert sd.enabled
-  assert sd.casper_restart.confirm_ns
   # No second confirmation delay after the normal controller permits departure.
   tick(sd, cs, 2_400_000_000, departure=True)
   assert not sd.enabled and sd.casper_restart.phase == 'off'
+
+
+def test_slow_lead_does_not_delay_off_but_resume_waits_for_current_motion():
+  sd, cs = setup()
+  lead = sd.sm['radarState'].leadOne
+  lead.vRel = .1
+  now = enter_owned_off(sd, cs)
+  assert now == 2_200_000_000  # First cycle in which normal departure is allowed.
+  for i in range(1, 31):
+    tick(sd, cs, now + i * 10_000_000, departure=True)
+    assert not sd.enabled and sd.casper_restart.phase == 'off'
+  lead.vRel = .3
+  tick(sd, cs, now + 310_000_000, departure=True)
+  assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
+
+
+def test_driver_cancel_during_slow_lead_wait_prevents_later_resume():
+  sd, cs = setup()
+  sd.sm['radarState'].leadOne.vRel = .1
+  now = enter_owned_off(sd, cs)
+  tick(sd, cs, now + 10_000_000, departure=True, driver_cancel=True)
+  sd.sm['radarState'].leadOne.vRel = 1.
+  for i in range(2, 50):
+    tick(sd, cs, now + i * 10_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
+
+
+def test_new_closing_lead_blocks_older_positive_plan_before_off():
+  sd, cs = setup()
+  for i in range(140):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+  lead = sd.sm['radarState'].leadOne
+  lead.radarTrackId, lead.dRel, lead.vRel = 9, 2., -.1
+  tick(sd, cs, 2_400_000_000, departure=True)
+  assert sd.enabled and sd.casper_restart.phase == 'holding'
+
+
+def test_closing_lead_during_owned_off_aborts_resume():
+  sd, cs = setup()
+  now = enter_owned_off(sd, cs)
+  sd.sm['radarState'].leadOne.vRel = -.1
+  tick(sd, cs, now + 10_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
 
 
 @pytest.mark.parametrize('distance', [0.5, 1.5, 1.99, 2.0])

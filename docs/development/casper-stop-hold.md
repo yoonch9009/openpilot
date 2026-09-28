@@ -351,3 +351,23 @@ That independent gate is now two meters; falling below it clears the assistance
 window, which cannot re-arm solely because the gap widens. Target/measured
 shortfall caps and all other guards remain. This is not a change to the MPC
 following distance or an instruction to accelerate toward a stationary lead.
+
+### Remove duplicate confirmation before OFF
+
+At the owner's request, OFF entry now relies on the normal planner/controller
+departure permission and valid lead data, without the extra vRel>0.2m/s gate
+or 60ms confirmation. The observed preceding stop and one-attempt limit remain.
+Post-OFF re-enable still requires vRel>0.2m/s and the existing fresh-lead,
+OFF-acknowledgment, consumed-plan and minimum-dwell checks. Low relative speed
+during OFF waits within the 1.5s episode timeout rather than immediately
+discarding ownership. If the lead never clears that post-OFF threshold, the
+episode times out disabled; this change does not eliminate that waiting time.
+Driver input, missing/stale/replaced lead and vehicle faults still abort.
+An approaching lead (vRel<0) still blocks OFF entry and aborts an owned OFF
+episode, so a newer closing observation cannot be overridden by an older plan.
+
+The earlier shared StoppingLeadFilter is still called by plannerd before MPC:
+its departure evidence remains 0.10m range growth and positive lead/relative
+speed for 0.10s (reduced from 0.15m in ef2f3f7). That upstream filter is separate
+from the removed downstream confirmation. The historical FollowingStop latch
+added in 063259d was withdrawn in 1da960e and is not active.

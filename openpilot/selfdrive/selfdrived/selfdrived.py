@@ -630,9 +630,11 @@ class SelfdriveD:
     # Do not add a fixed gap threshold to the planner's departure permission.
     # Nonpositive/nonfinite distance is invalid, not evidence of a moving lead.
     lead_ok = (lead.status and math.isfinite(lead.dRel) and math.isfinite(lead.vRel)
-               and lead.dRel > 0.0 and lead.vRel > .2)
+               and lead.dRel > 0.0)
+    # A fresh closing lead must not be overridden by an older positive plan.
+    lead_not_closing = lead_ok and lead.vRel >= 0.0
     lead_continuous = True
-    if not restart.confirm_ns and restart.phase != 'off':
+    if restart.phase != 'off':
       self.casper_restart_lead = None
     if lead_ok:
       current_lead = (int(lead.radarTrackId), float(lead.dRel), int(self.sm.logMonoTime['radarState']))
@@ -646,14 +648,14 @@ class SelfdriveD:
                and CS.gearShifter == car.CarState.GearShifter.drive
                and CS.cruiseState.available and not CS.accFaulted
                and not CS.parkingBrake and not CS.brakeHoldActive and CS.softHoldActive == 0)
-    # While holding, a stationary lead is normal. Once we own OFF, continue
-    # only with a fresh departing lead; normal no-entry checks remain intact.
+    # During owned OFF, invalid/lost leads abort. A slow lead only delays
+    # re-enable within the existing bounded timeout; it is not a data fault.
     healthy = healthy and lead_continuous
     if restart.phase == 'off':
-      healthy = healthy and lead_ok
+      healthy = healthy and lead_not_closing
     stationary = math.isfinite(CS.vEgo) and abs(CS.vEgo) < .1
     stopping = cc.longActive and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping and cc.actuators.accel < 0
-    departure = (cc.longActive and not plan.shouldStop and plan.hasLead and lead_ok
+    departure = (cc.longActive and not plan.shouldStop and plan.hasLead and lead_not_closing
                  and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.pid
                  and cc.actuators.accel > 0)
     off_ack = (not cc.enabled and not cc.longActive and abs(cc.actuators.accel) < .001
@@ -667,7 +669,7 @@ class SelfdriveD:
                             stopping=stopping, departure=departure, off_ack=off_ack,
                             plan_after_off=plan_after_off, user_input=user_input,
                               moving=math.isfinite(CS.vEgo) and CS.vEgo >= 1.0,
-                              lead_departing=lead_ok and plan.hasLead)
+                              resume_ready=lead_ok and lead.vRel > .2)
     if action == 'off':
       self.events.add(EventName.buttonCancel)
     elif action == 'on':
@@ -676,8 +678,11 @@ class SelfdriveD:
       phase=restart.phase, reason=restart.reason, action=action, enabled=self.enabled,
       healthy=healthy, user_input=user_input, off_ack=off_ack, plan_after_off=plan_after_off,
         car_state_mono_ns=self.casper_cs_mono_ns, lead_continuous=lead_continuous,
-        lead_departing=lead_ok and plan.hasLead, departure_ready=departure, should_stop=bool(plan.shouldStop),
-        confirm_ns=restart.confirm_ns, off_dwell_ns=restart.OFF_NS,
+        lead_valid=lead_ok, lead_not_closing=lead_not_closing,
+        departure_ready=departure, should_stop=bool(plan.shouldStop),
+        resume_lead_ready=lead_ok and lead.vRel > .2,
+        waiting_for_lead=restart.phase == 'off' and not (lead_ok and lead.vRel > .2),
+        off_dwell_ns=restart.OFF_NS,
       request_ns=restart.request_ns, ack_ns=restart.ack_ns, lead_distance=float(lead.dRel),
       lead_relative_speed=float(lead.vRel)))
 

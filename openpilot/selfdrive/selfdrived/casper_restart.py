@@ -3,21 +3,19 @@
 
 class CasperCruiseRestart:
   HOLD_NS = 1_000_000_000
-  CONFIRM_NS = 60_000_000
   OFF_NS = 200_000_000
   TIMEOUT_NS = 1_500_000_000
 
   def __init__(self):
     self.phase = 'idle'
     self.hold_ns = 0
-    self.confirm_ns = 0
     self.request_ns = 0
     self.ack_ns = 0
     self.last_ns = 0
     self.reason = ''
 
   def update(self, now_ns, *, enabled, healthy, stationary, stopping, departure,
-             off_ack, plan_after_off, user_input, moving, lead_departing=None):
+             off_ack, plan_after_off, user_input, moving, resume_ready=True):
     action = None
     if moving:
       self.__init__()
@@ -39,7 +37,7 @@ class CasperCruiseRestart:
       elif not enabled and off_ack:
         if not self.ack_ns:
           self.ack_ns = now_ns
-        if now_ns - self.ack_ns >= self.OFF_NS and plan_after_off:
+        if now_ns - self.ack_ns >= self.OFF_NS and plan_after_off and resume_ready:
           self.phase, self.reason = 'spent', 'resume_requested'
           action = 'on'
       elif self.ack_ns:
@@ -56,16 +54,9 @@ class CasperCruiseRestart:
     if not stationary:
       self.phase, self.reason = 'spent', 'already_moving'
       return action
-    # Confirm lead motion while the planner/controller still finishes its stop
-    # transition. Actual cancellation still requires departure permission.
-    if not (departure if lead_departing is None else lead_departing):
-      self.confirm_ns = 0
-      return action
-    if now_ns - self.hold_ns < self.HOLD_NS:
-      return action
-    if not self.confirm_ns:
-      self.confirm_ns = now_ns
-    elif departure and now_ns - self.confirm_ns >= self.CONFIRM_NS:
+    # The normal planner/controller already permits departure; do not add a
+    # second motion threshold or confirmation timer before requesting OFF.
+    if departure and now_ns - self.hold_ns >= self.HOLD_NS:
       self.phase, self.reason = 'off', 'cancel_requested'
       self.request_ns = now_ns
       action = 'off'

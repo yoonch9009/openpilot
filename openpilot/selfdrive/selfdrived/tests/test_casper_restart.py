@@ -48,20 +48,25 @@ class TestCasperCruiseRestart(unittest.TestCase):
     self.assertEqual(episode.run(20, enabled=False, off_ack=True, plan_after_off=True), [])
     self.assertEqual(episode.tick(), 'on')
 
-  def test_departure_noise_does_not_cancel(self):
+  def test_planner_permission_requests_off_without_extra_confirmation(self):
     episode = Episode()
     episode.run(110)
-    self.assertEqual(episode.run(5, stopping=False, departure=True), [])
-    episode.tick(stopping=True, departure=False)
-    self.assertEqual(episode.run(5, stopping=False, departure=True), [])
-    self.assertEqual(episode.controller.phase, 'holding')
-    self.assertEqual(episode.run(2), ['off'])
+    self.assertIsNone(episode.tick(departure=False))
+    self.assertEqual(episode.tick(stopping=False, departure=True), 'off')
 
-  def test_shorter_confirmation_still_requires_sixty_ms(self):
+  def test_resume_lead_wait_is_bounded_and_does_not_abort_immediately(self):
     episode = Episode()
-    episode.run(110)
-    self.assertEqual(episode.run(6, stopping=False, departure=True), [])
-    self.assertEqual(episode.tick(), 'off')
+    episode.request_off()
+    self.assertEqual(episode.run(40, enabled=False, off_ack=True,
+                                 plan_after_off=True, resume_ready=False), [])
+    self.assertEqual(episode.controller.phase, 'off')
+    self.assertEqual(episode.tick(resume_ready=True), 'on')
+    episode = Episode()
+    episode.request_off()
+    self.assertEqual(episode.run(170, enabled=False, off_ack=True,
+                                 plan_after_off=True, resume_ready=False), [])
+    self.assertEqual(episode.controller.phase, 'spent')
+    self.assertIsNone(episode.tick(resume_ready=True))
 
   def test_cancel_at_shortened_resume_boundary_prevents_enable(self):
     episode = Episode()
@@ -69,20 +74,6 @@ class TestCasperCruiseRestart(unittest.TestCase):
     episode.run(20, enabled=False, off_ack=True, plan_after_off=True)
     self.assertIsNone(episode.tick(user_input=True))
     self.assertEqual(episode.run(100, user_input=False), [])
-
-  def test_lead_confirmation_overlaps_but_never_bypasses_departure_permission(self):
-    episode = Episode()
-    episode.run(110)
-    self.assertEqual(episode.run(30, lead_departing=True, departure=False), [])
-    self.assertEqual(episode.tick(departure=True, stopping=False), 'off')
-
-  def test_lost_lead_restarts_confirmation_before_permission(self):
-    episode = Episode()
-    episode.run(110)
-    episode.run(20, lead_departing=True)
-    episode.tick(lead_departing=False)
-    self.assertEqual(episode.run(6, lead_departing=True, departure=True), [])
-    self.assertEqual(episode.tick(), 'off')
 
   def test_stationary_engagement_without_prior_stop_does_not_cycle(self):
     episode = Episode()
