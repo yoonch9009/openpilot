@@ -6,6 +6,7 @@ from numbers import Number
 from openpilot.cereal import car, log
 import openpilot.cereal.messaging as messaging
 from openpilot.common.constants import CV
+from openpilot.selfdrive.monitoring.config import monitoring_enabled
 from openpilot.common.params import Params
 from openpilot.common.pid import MultiplicativeUnwindPID
 from openpilot.common.realtime import config_realtime_process, Priority, Ratekeeper
@@ -56,14 +57,13 @@ def lateral_control_allowed(selfdrive_active: bool, always_lateral: bool, lat_en
 class Controls:
   def __init__(self) -> None:
     self.params = Params()
+    self.dm_enabled = monitoring_enabled(self.params)
     cloudlog.info("controlsd is waiting for CarParams")
     self.CP = messaging.log_from_bytes(self.params.get("CarParams", block=True), car.CarParams)
     cloudlog.info("controlsd got CarParams")
 
     self.CI = interfaces[self.CP.carFingerprint](self.CP)
     self.casper_diagnostics = CasperDiagnostics('controlsd') if self.CP.carFingerprint == CAR.HYUNDAI_CASPER else None
-
-    self.disable_dm = False
 
     self.sm = messaging.SubMaster(['liveDelay', 'liveParameters', 'liveTorqueParameters', 'modelV2', 'selfdriveState',
                                    'liveCalibration', 'livePose', 'longitudinalPlan', 'carState', 'carOutput',
@@ -432,10 +432,8 @@ class Controls:
     cs.upAccelCmd = float(self.LoC.pid.p)
     cs.uiAccelCmd = float(self.LoC.pid.i)
     cs.ufAccelCmd = float(self.LoC.pid.f)
-    cs.forceDecel = False
-    if self.params.get_int("DisableDM") == 0:
-      cs.forceDecel = bool((self.sm['driverMonitoringState'].alertLevel == log.DriverMonitoringState.AlertLevel.three) or
-                           (self.sm['selfdriveState'].state == State.softDisabling))
+    cs.forceDecel = bool((self.dm_enabled and self.sm['driverMonitoringState'].alertLevel == log.DriverMonitoringState.AlertLevel.three) or
+                         (self.sm['selfdriveState'].state == State.softDisabling))
 
 
     lat_tuning = self.CP.lateralTuning.which()
@@ -469,7 +467,9 @@ class Controls:
 
 
 def main():
-  config_realtime_process(4, Priority.CTRL_HIGH)
+  # Share isolated core6 with selfdrived and camerad; keep the short 100Hz
+  # control work off core4's planner/radarcan queue. Preserve FIFO53.
+  config_realtime_process(6, Priority.CTRL_HIGH)
   controls = Controls()
   controls.run()
 

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from enum import Enum
 from openpilot.cereal import messaging, car, log
 from openpilot.common.filter_simple import FirstOrderFilter
+from openpilot.selfdrive.monitoring.config import monitoring_enabled
 from openpilot.common.params import Params
 from openpilot.common.swaglog import cloudlog
 from openpilot.selfdrive.modeld.helpers import active_usbgpu_compiled_path, usbgpu_compile_pending
@@ -34,6 +35,7 @@ class UIState:
 
   def _initialize(self):
     self.params = Params()
+    self.dm_enabled = monitoring_enabled(self.params)
     self.params_memory = Params("/dev/shm/params")
     self.sm = messaging.SubMaster(
       [
@@ -113,6 +115,7 @@ class UIState:
     self.usbgpu_loading: bool = False
     self.usbgpu_active: bool = False
     self.usbgpu_startup_failed: bool = False
+    self.jetlink_badge = None
 
     self.update_params()
 
@@ -229,6 +232,8 @@ class UIState:
     self.usbgpu_loading = self.params.get_bool("UsbGpuLoading")
     self.usbgpu_active = self.params.get_bool("UsbGpuActive")
     self.usbgpu_startup_failed = self.params.get_bool("UsbGpuStartupFailed")
+    from openpilot.common.jetlink_status import badge
+    self.jetlink_badge = badge()
 
     self._param_update_time = time.monotonic()
 

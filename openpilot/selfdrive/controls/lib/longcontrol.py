@@ -1,3 +1,4 @@
+import math
 import numpy as np
 from openpilot.cereal import car
 from openpilot.common.realtime import DT_CTRL
@@ -7,23 +8,26 @@ from openpilot.selfdrive.modeld.constants import ModelConstants
 from openpilot.common.params import Params
 from opendbc.car.hyundai.values import HyundaiFlags, CAR
 from openpilot.selfdrive.controls.lib.casper_launch import CasperReengageAccel
+from openpilot.selfdrive.controls.lib.cruise_coasting import (
+  CruiseCoastingControl, MAX_PLAN_AGE, coasting_relief, no_coasting_lead,
+)
 
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
 
 HYUNDAI_LONGITUDINAL_KP = 1.0
 HYUNDAI_LONGITUDINAL_KI = 0.0
 HYUNDAI_LONGITUDINAL_KF = 1.0
-STOPPING_ACCEL = -0.5  # m/s^2; formerly StoppingAccel=-50
+STOPPING_ACCEL_DEFAULT = -50  # Params use hundredths of m/s^2
+STOPPING_ACCEL_MIN = -100
+STOPPING_ACCEL_MAX = -50
 
 LongCtrlState = car.CarControl.Actuators.LongControlState
 
 
 def long_control_state_trans(CP, active, long_control_state, v_ego,
-                             should_stop, brake_pressed, cruise_standstill, a_ego, stopping_accel, radarState,
-                             stop_retry=False):
+                             should_stop, brake_pressed, cruise_standstill, a_ego, stopping_accel, radarState):
   stopping_condition = should_stop
   stopping_accel = stopping_accel if stopping_accel < 0.0 else -0.5
-  stop_ready = a_ego >= stopping_accel
   starting_condition = (not should_stop and
                         not cruise_standstill and
                         not brake_pressed)
@@ -34,7 +38,7 @@ def long_control_state_trans(CP, active, long_control_state, v_ego,
 
   else:
     if long_control_state == LongCtrlState.off:
-      if not starting_condition and (not stop_retry or stop_ready):
+      if not starting_condition:
         long_control_state = LongCtrlState.stopping
       else:
         if starting_condition and CP.startingState:
@@ -52,11 +56,10 @@ def long_control_state_trans(CP, active, long_control_state, v_ego,
       if stopping_condition:
         leadOne = radarState.leadOne
         fcw_stop = leadOne.status and leadOne.dRel < 4.0
-        enter_stopping = stop_ready if stop_retry else (a_ego > stopping_accel or fcw_stop)
-        if enter_stopping:
+        if a_ego > stopping_accel or fcw_stop:
           long_control_state = LongCtrlState.stopping
         elif long_control_state == LongCtrlState.starting:
-          long_control_state = LongCtrlState.pid if stop_retry else LongCtrlState.stopping
+          long_control_state = LongCtrlState.stopping
       elif started_condition:
         long_control_state = LongCtrlState.pid
   return long_control_state
@@ -72,14 +75,12 @@ class LongControl:
     self.casper_launch = (CasperReengageAccel() if getattr(CP, 'carFingerprint', None) == CAR.HYUNDAI_CASPER
                           and CP.openpilotLongitudinalControl and CP.flags & HyundaiFlags.CAMERA_SCC
                           and not CP.flags & HyundaiFlags.CANFD else None)
+    self.coasting = CruiseCoastingControl()
 
 
     self.params = Params()
     self.readParamCount = 0
-    self.stopping_accel = STOPPING_ACCEL
-    self.canfd_stop_retry_available = (CP.brand == "hyundai" and bool(CP.flags & HyundaiFlags.CANFD)
-                                     and CP.openpilotLongitudinalControl)
-    self.canfd_stop_retry = self.canfd_stop_retry_available and self.params.get_bool("CanfdStopRetry")
+    self._refresh_stopping_accel()
     self.j_lead = 0.0
 
     self.hyundai_fixed_longitudinal_tuning = CP.brand == "hyundai"
@@ -89,6 +90,16 @@ class LongControl:
     self.use_accel_pid = False
     if CP.brand == "toyota":
       self.use_accel_pid = True
+
+  def _refresh_stopping_accel(self):
+    try:
+      value = float(self.params.get_float("StoppingAccel"))
+    except (TypeError, ValueError):
+      value = STOPPING_ACCEL_DEFAULT
+    if not math.isfinite(value):
+      value = STOPPING_ACCEL_DEFAULT
+    # Enforce the menu bounds even for stale Params or direct writes.
+    self.stopping_accel = min(STOPPING_ACCEL_MAX, max(STOPPING_ACCEL_MIN, value)) * 0.01
 
   def _apply_hyundai_longitudinal_tuning(self):
     # Hyundai, Kia, and Genesis all use the opendbc "hyundai" brand. Keep the
@@ -110,6 +121,7 @@ class LongControl:
 
   def reset(self):
     self.pid.reset()
+    self.coasting.reset()
 
   def update(self, active, CS, long_plan, accel_limits, t_since_plan, radarState, launch_inputs_valid=True):
 
@@ -120,10 +132,9 @@ class LongControl:
     should_stop = long_plan.shouldStop
 
     self.readParamCount += 1
-    if self.canfd_stop_retry_available and self.readParamCount % 50 == 0:
-      self.canfd_stop_retry = self.params.get_bool("CanfdStopRetry")
     if self.readParamCount >= 100:
       self.readParamCount = 0
+      self._refresh_stopping_accel()
     elif self.readParamCount == 10:
       self._refresh_longitudinal_tuning()
 
@@ -134,8 +145,7 @@ class LongControl:
 
     self.long_control_state = long_control_state_trans(self.CP, active, self.long_control_state, CS.vEgo,
                                                        should_stop, CS.brakePressed,
-                                                       CS.cruiseState.standstill, CS.aEgo, self.stopping_accel, radarState,
-                                                       stop_retry=self.canfd_stop_retry)
+                                                       CS.cruiseState.standstill, CS.aEgo, self.stopping_accel, radarState)
     if active and soft_hold_active:
       self.long_control_state = LongCtrlState.stopping
 
@@ -148,7 +158,7 @@ class LongControl:
 
       if soft_hold_active:
         output_accel = self.CP.stopAccel
-
+      # Restore the original one-way ramp. Do not unwind stronger braking.
       if output_accel > self.stopping_accel:
         output_accel = min(output_accel, 0.0)
         output_accel -= self.CP.stoppingDecelRate * DT_CTRL
@@ -159,12 +169,34 @@ class LongControl:
       self.reset()
 
     else:  # LongCtrlState.pid
+      target = getattr(long_plan, 'cruiseCoastingTarget', 0.0)
+      percent = getattr(long_plan, 'cruiseCoastingPercent', 0)
+      relief = 0.0
+      if (target > 0.0 and percent > 0 and self.CP.openpilotLongitudinalControl and
+          0.0 <= t_since_plan <= MAX_PLAN_AGE and
+          long_plan.longitudinalPlanSource == 'cruise' and not long_plan.fcw and not should_stop and
+          not CS.brakePressed and not CS.gasPressed and not CS.carrotCruise and
+          abs(long_plan.cruiseTarget - CS.vCruise) < 0.001 and
+          not CS.cruiseState.standstill and no_coasting_lead(radarState) and
+          math.isfinite(CS.aEgo) and math.isfinite(a_target_ff) and math.isfinite(v_target_now) and
+          accel_limits[1] >= 0.0):
+        relief = coasting_relief(CS.vEgo, target, percent)
+      if relief == 0.0:
+        self.coasting.reset()
       if self.use_accel_pid:
         error = a_target_ff - CS.aEgo
       else:
         error = v_target_now - CS.vEgo
-      output_accel = self.pid.update(error, speed=CS.vEgo,
-                                     feedforward=a_target_ff)
+      previous_integral = self.pid.i
+      output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target_ff)
+      if relief > 0.0 and output_accel < 0.0:
+        # Preserve the ordinary PID exactly for positive commands and at 0%.
+        # Do not integrate a speed error whose braking output we are suppressing.
+        self.pid.i = previous_integral
+        output_accel = self.pid.update(error, speed=CS.vEgo, feedforward=a_target_ff, freeze_integrator=True)
+        output_accel = self.coasting.apply(output_accel, relief, DT_CTRL)
+      else:
+        self.coasting.reset()
 
     if self.casper_launch is not None:
       lead = radarState.leadOne
