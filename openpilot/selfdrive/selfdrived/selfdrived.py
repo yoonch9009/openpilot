@@ -664,7 +664,8 @@ class SelfdriveD:
     action = restart.update(now_ns, enabled=self.enabled, healthy=healthy, stationary=stationary,
                             stopping=stopping, departure=departure, off_ack=off_ack,
                             plan_after_off=plan_after_off, user_input=user_input,
-                            moving=math.isfinite(CS.vEgo) and CS.vEgo >= 1.0)
+                              moving=math.isfinite(CS.vEgo) and CS.vEgo >= 1.0,
+                              lead_departing=lead_ok and plan.hasLead)
     if action == 'off':
       self.events.add(EventName.buttonCancel)
     elif action == 'on':
@@ -672,7 +673,9 @@ class SelfdriveD:
     self.casper_restart_log.record(CS.vEgo, lambda: dict(
       phase=restart.phase, reason=restart.reason, action=action, enabled=self.enabled,
       healthy=healthy, user_input=user_input, off_ack=off_ack, plan_after_off=plan_after_off,
-      car_state_mono_ns=self.casper_cs_mono_ns, lead_continuous=lead_continuous,
+        car_state_mono_ns=self.casper_cs_mono_ns, lead_continuous=lead_continuous,
+        lead_departing=lead_ok and plan.hasLead, departure_ready=departure, should_stop=bool(plan.shouldStop),
+        confirm_ns=restart.confirm_ns, off_dwell_ns=restart.OFF_NS,
       request_ns=restart.request_ns, ack_ns=restart.ack_ns, lead_distance=float(lead.dRel),
       lead_relative_speed=float(lead.vRel)))
 

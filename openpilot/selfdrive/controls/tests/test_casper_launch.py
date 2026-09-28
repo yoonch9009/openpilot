@@ -29,11 +29,11 @@ class TestCasperReengageAccel(unittest.TestCase):
     self.reenable()
     previous = 0.2
     for _ in range(60):
-      result = self.step()
-      self.assertLessEqual(result - previous, 0.005 + 1e-9)
-      self.assertLessEqual(result, 0.4 + 1e-9)
+      result = self.step(target_accel=0.8)
+      self.assertLessEqual(result - previous, 0.01 + 1e-9)
+      self.assertLessEqual(result, 0.5 + 1e-9)
       previous = result
-    self.assertAlmostEqual(previous, 0.4)
+    self.assertAlmostEqual(previous, 0.5)
     self.assertAlmostEqual(self.step(target_accel=0.23), 0.23)
     self.assertEqual(self.step(requested_accel=0.6), 0.6)
 
@@ -79,6 +79,34 @@ class TestCasperReengageAccel(unittest.TestCase):
     self.reenable()
     for _ in range(301):
       self.step()
+    self.assertEqual(self.helper.remaining_s, 0.0)
+    self.assertEqual(self.step(), 0.2)
+
+  def test_assistance_window_starts_on_motion_after_wait(self):
+    self.reenable()
+    for _ in range(149):
+      self.assertEqual(self.step(speed=0.0, stopping=True), 0.2)
+    self.assertEqual(self.helper.remaining_s, 3.0)
+    for _ in range(290):
+      self.assertGreater(self.step(), 0.2)
+    self.assertGreater(self.helper.remaining_s, 0.0)
+    for _ in range(11):
+      self.step()
+    self.assertEqual(self.helper.remaining_s, 0.0)
+    self.assertEqual(self.step(), 0.2)
+
+  def test_wait_for_motion_expires_after_two_seconds(self):
+    self.reenable()
+    for _ in range(199):
+      self.assertEqual(self.step(speed=0.0, stopping=True), 0.2)
+    self.assertEqual(self.helper.remaining_s, 0.0)
+    self.assertEqual(self.step(), 0.2)
+
+  def test_window_does_not_pause_when_vehicle_slows_below_motion_threshold(self):
+    self.reenable()
+    self.assertGreater(self.step(speed=0.1, target_speed=0.0), 0.2)
+    for _ in range(300):
+      self.assertEqual(self.step(speed=0.09), 0.2)
     self.assertEqual(self.helper.remaining_s, 0.0)
     self.assertEqual(self.step(), 0.2)
 

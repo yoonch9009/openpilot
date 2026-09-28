@@ -4,7 +4,7 @@
 class CasperCruiseRestart:
   HOLD_NS = 1_000_000_000
   CONFIRM_NS = 100_000_000
-  OFF_NS = 550_000_000
+  OFF_NS = 300_000_000
   TIMEOUT_NS = 1_500_000_000
 
   def __init__(self):
@@ -17,7 +17,7 @@ class CasperCruiseRestart:
     self.reason = ''
 
   def update(self, now_ns, *, enabled, healthy, stationary, stopping, departure,
-             off_ack, plan_after_off, user_input, moving):
+             off_ack, plan_after_off, user_input, moving, lead_departing=None):
     action = None
     if moving:
       self.__init__()
@@ -56,14 +56,16 @@ class CasperCruiseRestart:
     if not stationary:
       self.phase, self.reason = 'spent', 'already_moving'
       return action
-    if not departure:
+    # Confirm lead motion while the planner/controller still finishes its stop
+    # transition. Actual cancellation still requires departure permission.
+    if not (departure if lead_departing is None else lead_departing):
       self.confirm_ns = 0
       return action
     if now_ns - self.hold_ns < self.HOLD_NS:
       return action
     if not self.confirm_ns:
       self.confirm_ns = now_ns
-    elif now_ns - self.confirm_ns >= self.CONFIRM_NS:
+    elif departure and now_ns - self.confirm_ns >= self.CONFIRM_NS:
       self.phase, self.reason = 'off', 'cancel_requested'
       self.request_ns = now_ns
       action = 'off'

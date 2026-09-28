@@ -72,11 +72,23 @@ def test_binder_drives_full_state_machine_off_and_on_after_ack():
   sd, cs = setup()
   now = enter_owned_off(sd, cs)
   assert not sd.enabled
-  for i in range(1, 56):
+  for i in range(1, 31):
     tick(sd, cs, now + i * 10_000_000, departure=True)
     assert not sd.enabled
-  tick(sd, cs, now + 560_000_000, departure=True)
+  tick(sd, cs, now + 310_000_000, departure=True)
   assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
+
+
+def test_moving_lead_confirmation_waits_for_planner_and_controller_permission():
+  sd, cs = setup()
+  # The lead is already moving, but the planner continues to request stopping.
+  for i in range(140):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+    assert sd.enabled
+  assert sd.casper_restart.confirm_ns
+  # No second confirmation delay after the normal controller permits departure.
+  tick(sd, cs, 2_400_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'off'
 
 
 @pytest.mark.parametrize('source', ['carControl', 'controlsState', 'longitudinalPlan', 'radarState', 'actual_car_state'])

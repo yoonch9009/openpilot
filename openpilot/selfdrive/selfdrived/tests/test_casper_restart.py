@@ -45,7 +45,7 @@ class TestCasperCruiseRestart(unittest.TestCase):
     episode = Episode()
     episode.request_off()
     episode.run(30)
-    self.assertEqual(episode.run(55, enabled=False, off_ack=True, plan_after_off=True), [])
+    self.assertEqual(episode.run(30, enabled=False, off_ack=True, plan_after_off=True), [])
     self.assertEqual(episode.tick(), 'on')
 
   def test_departure_noise_does_not_cancel(self):
@@ -56,6 +56,20 @@ class TestCasperCruiseRestart(unittest.TestCase):
     self.assertEqual(episode.run(9, stopping=False, departure=True), [])
     self.assertEqual(episode.controller.phase, 'holding')
     self.assertEqual(episode.run(2), ['off'])
+
+  def test_lead_confirmation_overlaps_but_never_bypasses_departure_permission(self):
+    episode = Episode()
+    episode.run(110)
+    self.assertEqual(episode.run(30, lead_departing=True, departure=False), [])
+    self.assertEqual(episode.tick(departure=True, stopping=False), 'off')
+
+  def test_lost_lead_restarts_confirmation_before_permission(self):
+    episode = Episode()
+    episode.run(110)
+    episode.run(20, lead_departing=True)
+    episode.tick(lead_departing=False)
+    self.assertEqual(episode.run(10, lead_departing=True, departure=True), [])
+    self.assertEqual(episode.tick(), 'off')
 
   def test_stationary_engagement_without_prior_stop_does_not_cycle(self):
     episode = Episode()

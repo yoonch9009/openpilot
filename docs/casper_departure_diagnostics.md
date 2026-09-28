@@ -70,6 +70,11 @@ mono_ns (producer snapshot) distinctly when aligning diagnostic events.
 
 ## Validation boundary
 
+Since 2026-09-28 restart records include the exact lead_departing confirmation
+input, departure_ready, should_stop, confirm_ns and off_dwell_ns. Separate lead
+confirmation from planner permission and OFF acknowledgment when measuring
+latency. Snapshot rate is still 10Hz; these fields do not prove ECU acceptance.
+
 Tests compare every generated CAN byte with diagnostics enabled/disabled and
 with a failing sink. They cover rate limiting, feedback/lead snapshots, parsing,
 sub-sample control transitions, repeated stopping and incomplete motion windows.

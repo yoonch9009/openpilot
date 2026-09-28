@@ -300,3 +300,24 @@ must be fresh. It is not a fixed launch acceleration or a standstill boost.
 Software regressions and recorded input comparison do not establish repeatable
 ECU acceptance. The owner's manual OFF/ON result is the basis for this experiment;
 automatic OFF/ON still requires vehicle validation.
+
+## Restart latency trial (2026-09-28)
+
+The owner reported successful automatic departures on 3eaa88d. Two departures
+in route 0000000c--aa4e03d348 also show motion without pedal intervention.
+This establishes those cases, not general reliability. Earlier routes include
+pedal interventions and the final collected segment was incomplete.
+
+Lead-motion confirmation now overlaps the planner/controller stop-to-PID
+transition; actual cancellation still requires shouldStop=false and positive
+PID acceleration. The 100ms confirmation is retained. OFF dwell is reduced
+from 550ms to 300ms after acknowledgement, retaining fresh post-OFF plan
+consumption. This removes up to 350ms of serial software delay, but the shorter
+ECU OFF duration is a new vehicle trial and is not validated by old logs.
+
+Moving-only target-shortfall correction increases from 0.2 to 0.3m/s² and its
+rise limit from 0.5 to 1.0m/s³. The three-second window starts at first motion
+of at least 0.1m/s, with at most two seconds waiting after re-enable. Target,
+measured-shortfall and actuator caps remain; no stationary acceleration boost
+or SCC11/14/jerk encoder override is introduced. This does not eliminate the
+planner's own stop decision or raise its acceleration target.

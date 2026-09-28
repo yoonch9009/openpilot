@@ -15,6 +15,8 @@ class CasperReengageAccel:
     self._armed = False
     self._off_s = 0.0
     self._launch_started = False
+    self._motion_started = False
+    self._motion_wait_s = 0.0
 
   def _clear(self):
     self.correction = 0.0
@@ -22,6 +24,8 @@ class CasperReengageAccel:
     self._armed = False
     self._off_s = 0.0
     self._launch_started = False
+    self._motion_started = False
+    self._motion_wait_s = 0.0
 
   def update(self, active, stopping, speed, measured_accel, target_accel, target_speed,
              requested_accel, lead_valid, lead_distance, lead_relative_speed,
@@ -38,6 +42,8 @@ class CasperReengageAccel:
       self.correction = 0.0
       self.remaining_s = 0.0
       self._launch_started = False
+      self._motion_started = False
+      self._motion_wait_s = 0.0
       self._off_s += dt
       if self._off_s > 2.0 + 1e-9 or abs(speed) >= 0.3:
         self._armed = False
@@ -47,6 +53,8 @@ class CasperReengageAccel:
       if self._armed and 0.0 < self._off_s <= 2.0 + 1e-9 and abs(speed) < 0.3 and lead_valid and lead_relative_speed > 0.2:
         self.remaining_s = 3.0
         self._launch_started = False
+        self._motion_started = False
+        self._motion_wait_s = 0.0
       self._armed = False
       self._off_s = 0.0
 
@@ -54,8 +62,16 @@ class CasperReengageAccel:
       if not lead_valid or lead_relative_speed <= 0.2 or lead_distance < 3.0 or (stopping and self._launch_started):
         self._clear()
       else:
-        self.remaining_s = max(0.0, self.remaining_s - dt)
         self._launch_started |= not stopping
+        # Do not spend the assistance window waiting for brake release. Waiting
+        # is bounded separately; once moving, the window runs without pausing.
+        self._motion_started |= speed >= 0.1
+        if self._motion_started:
+          self.remaining_s = max(0.0, self.remaining_s - dt)
+        else:
+          self._motion_wait_s += dt
+          if self._motion_wait_s >= 2.0 - 1e-9:
+            self._clear()
 
     # Keep the observed stop through a PID departure request while the car is
     # still stationary: the driver may CANCEL only after noticing no movement.
@@ -74,6 +90,6 @@ class CasperReengageAccel:
       self.correction = 0.0
       return requested_accel
 
-    desired = min(0.2, max(target_accel - requested_accel, 0.0), max(target_accel - measured_accel, 0.0))
-    self.correction = min(desired, self.correction + 0.5 * dt)
+    desired = min(0.3, max(target_accel - requested_accel, 0.0), max(target_accel - measured_accel, 0.0))
+    self.correction = min(desired, self.correction + 1.0 * dt)
     return requested_accel + self.correction
