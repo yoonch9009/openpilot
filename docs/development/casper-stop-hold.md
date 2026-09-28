@@ -343,5 +343,11 @@ fixed two-meter lead gap. A finite positive distance, departing relative speed,
 fresh continuous lead and the existing planner/controller departure permission
 are still required. This changes only eligibility for the owned restart cycle;
 it does not reduce the planner's following/stop distance. The separate moving
-acceleration correction retains its three-meter gate. No vehicle result yet
+acceleration correction was initially left at three meters. No vehicle result yet
 establishes the effect of removing this redundant minimum-gap condition.
+
+The owner then requested a two-meter minimum for moving acceleration assistance.
+That independent gate is now two meters; falling below it clears the assistance
+window, which cannot re-arm solely because the gap widens. Target/measured
+shortfall caps and all other guards remain. This is not a change to the MPC
+following distance or an instruction to accelerate toward a stationary lead.

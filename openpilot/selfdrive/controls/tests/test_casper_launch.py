@@ -47,7 +47,7 @@ class TestCasperReengageAccel(unittest.TestCase):
 
   def test_immediate_drop_and_no_reactivation_after_invalid_inputs(self):
     for invalid in (dict(driver_input=True), dict(control_valid=False), dict(lead_valid=False),
-                    dict(lead_relative_speed=-0.1), dict(lead_distance=2.9),
+                    dict(lead_relative_speed=-0.1), dict(lead_distance=1.99),
                     dict(dt=0.0), dict(dt=0.1), dict(speed=float('nan'))):
       with self.subTest(invalid=invalid):
         self.helper = CasperReengageAccel()
@@ -131,6 +131,14 @@ class TestCasperReengageAccel(unittest.TestCase):
     for _ in range(60):
       result = self.step(measured_accel=0.44)
     self.assertAlmostEqual(result, 0.26)
+
+  def test_two_meter_assistance_boundary_and_gap_drop(self):
+    self.reenable()
+    self.assertGreater(self.step(lead_distance=2.0), 0.2)
+    self.assertEqual(self.step(lead_distance=1.99), 0.2)
+    self.assertEqual(self.helper.correction, 0.0)
+    # A widening gap alone must not re-arm an aborted launch window.
+    self.assertEqual(self.step(lead_distance=2.1), 0.2)
 
   def test_stop_then_stationary_pid_before_cancel_preserves_arm(self):
     self.step(stopping=True, speed=0.0, requested_accel=-0.5)

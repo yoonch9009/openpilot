@@ -59,7 +59,7 @@ class CasperReengageAccel:
       self._off_s = 0.0
 
     if self.remaining_s > 0.0:
-      if not lead_valid or lead_relative_speed <= 0.2 or lead_distance < 3.0 or (stopping and self._launch_started):
+      if not lead_valid or lead_relative_speed <= 0.2 or lead_distance < 2.0 or (stopping and self._launch_started):
         self._clear()
       else:
         self._launch_started |= not stopping
