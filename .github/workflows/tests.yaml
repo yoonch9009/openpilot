@@ -86,6 +86,8 @@ jobs:
             openpilot/selfdrive/selfdrived/tests/test_casper_restart.py \
             openpilot/selfdrive/selfdrived/tests/test_casper_restart_integration.py \
             openpilot/selfdrive/controls/lib/tests/test_casper_restart_plan.py \
+            openpilot/selfdrive/controls/tests/test_cruise_coasting.py \
+            openpilot/selfdrive/controls/tests/test_stopping_speed_param.py \
             openpilot/selfdrive/controls/tests/test_casper_launch.py \
             openpilot/selfdrive/controls/tests/test_longcontrol_hyundai_tuning.py \
             opendbc_repo/opendbc/car/hyundai/tests/test_casper_launch_jerk.py \

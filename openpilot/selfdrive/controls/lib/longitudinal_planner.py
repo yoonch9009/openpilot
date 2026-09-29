@@ -391,6 +391,16 @@ class LongitudinalPlanner:
     self.update_coasting(sm, carrot, v_cruise_kph, v_cruise, reset_state,
                          force_slow_decel, coasting_turn_blocked, cutin_predecel_limit)
 
+    # Record only a normally engaged live departure plan. Never renew this history
+    # while an owned marker is present, including its short post-enable tail.
+    if (self.casper_restart_eligible and not reset_state and not driver_input and not force_slow_decel
+        and sm['selfdriveState'].enabled and not long_control_off
+        and not getattr(sm['selfdriveState'], 'casperRestartRequestMonoTime', 0)
+        and np.isfinite(self.output_a_target) and self.output_a_target > 0 and not self.output_should_stop):
+      snapshot_ns = fresh_input_snapshot_time(sm, monotonic_ns())
+      if snapshot_ns:
+        self.casper_prior_departure_ns = snapshot_ns
+
   def update_coasting(self, sm, carrot, v_cruise_kph, v_cruise, reset_state,
                       force_slow_decel, coasting_turn_blocked, cutin_predecel_limit):
     self.coasting_target = 0.0
@@ -420,15 +430,6 @@ class LongitudinalPlanner:
     else:
       self.coasting.reset()
 
-    # Record only a normally engaged live departure plan. Never renew this history
-    # while an owned marker is present, including its short post-enable tail.
-    if (self.casper_restart_eligible and not reset_state and not driver_input and not force_slow_decel
-        and sm['selfdriveState'].enabled and not long_control_off
-        and not getattr(sm['selfdriveState'], 'casperRestartRequestMonoTime', 0)
-        and np.isfinite(self.output_a_target) and self.output_a_target > 0 and not self.output_should_stop):
-      snapshot_ns = fresh_input_snapshot_time(sm, monotonic_ns())
-      if snapshot_ns:
-        self.casper_prior_departure_ns = snapshot_ns
 
   def publish(
     self,
