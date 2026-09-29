@@ -7,6 +7,7 @@ from opendbc.car.common.conversions import Conversions as CV
 from opendbc.car.hyundai import hyundaicanfd, hyundaican
 from opendbc.car.hyundai.carstate import CarState
 from opendbc.car.hyundai.stopping import CanfdStopping
+from opendbc.car.hyundai.casper_launch_jerk import CasperLaunchJerk
 from opendbc.car.hyundai.hyundaicanfd import CanBus
 from opendbc.car.hyundai.values import HyundaiFlags, Buttons, CarControllerParams, CAR, CAN_GEARS, HyundaiExtFlags
 from opendbc.car.interfaces import CarControllerBase
@@ -177,6 +178,8 @@ def apply_steer_angle_limits_physics(desired_sw_deg: float,
 class CarController(CarControllerBase):
   def __init__(self, dbc_names, CP):
     self.casper_diagnostics = CasperDiagnostics('scc') if CP.carFingerprint == CAR.HYUNDAI_CASPER else None
+    self.casper_launch_jerk = CasperLaunchJerk() if (CP.carFingerprint == CAR.HYUNDAI_CASPER and
+      CP.openpilotLongitudinalControl and CP.flags & HyundaiFlags.CAMERA_SCC and not CP.flags & HyundaiFlags.CANFD) else None
     super().__init__(dbc_names, CP)
     self.CAN = CanBus(CP)
     self.params = CarControllerParams(CP)
@@ -585,12 +588,32 @@ class CarController(CarControllerBase):
         #jerk = 3.0 if actuators.longControlState == LongCtrlState.pid else 1.0
         use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
         if camera_scc:
+          launch_jerk_upper = None
+          if self.casper_launch_jerk is not None:
+            tcs_time = getattr(CS, 'casper_tcs13_mono_ns', 0)
+            feedback_fresh = tcs_time > 0 and 0 <= now_nanos - tcs_time <= 100_000_000
+            launch_input_time = getattr(CC, 'casperLaunchInputsMonoTime', 0)
+            launch_inputs_fresh = launch_input_time > 0 and 0 <= now_nanos - launch_input_time <= 300_000_000
+            healthy = (CS.out.canValid and not CS.out.canTimeout and not CS.out.accFaulted
+                       and CS.out.gearShifter == structs.CarState.GearShifter.drive and CS.out.cruiseState.available
+                       and not CS.out.brakePressed and not CS.out.gasPressed and not CS.out.parkingBrake
+                       and not CS.out.brakeHoldActive and CS.softHoldActive == 0 and not CC.cruiseControl.override
+                       and self.hyundai_jerk.carrot_cruise == 0 and CS.scc12 is not None and CS.scc14 is not None
+                       and launch_inputs_fresh)
+            launch_jerk_upper = self.casper_launch_jerk.update(
+              now_nanos / 1e9, active=CC.enabled and CC.longActive, stopping=stopping, speed=CS.out.vEgo,
+              healthy=healthy, feedback_fresh=feedback_fresh,
+              brake_released=not getattr(CS, 'casper_brake_control_active', True),
+              lead_valid=hud_control.leadVisible, lead_distance=hud_control.leadDistance,
+              lead_relative_speed=hud_control.leadRelSpeed, target=actuators.aTarget, request=accel,
+              measured=CS.out.aEgo, planned_jerk=actuators.jerk if actuators.longControlState == LongCtrlState.pid else -1.0,
+              original=self.hyundai_jerk.jerk_u)
 
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
                                                           CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode,
                                                           long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid,
-                                                          diagnostics=self.casper_diagnostics))
+                                                          diagnostics=self.casper_diagnostics, launch_jerk_upper=launch_jerk_upper))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,

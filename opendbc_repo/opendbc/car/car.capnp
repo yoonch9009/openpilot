@@ -441,6 +441,8 @@ struct CarControl {
   orientationNED @13 :List(Float32);
   angularVelocity @14 :List(Float32);
   currentCurvature @17 :Float32;  # From vehicle model
+  # Oldest validated input timestamp for bounded Casper launch assistance; 0 disables it.
+  casperLaunchInputsMonoTime @18 :UInt64;
 
   cruiseControl @4 :CruiseControl;
   hudControl @5 :HUDControl;

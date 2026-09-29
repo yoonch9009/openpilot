@@ -381,3 +381,39 @@ OFF acknowledgment, plus the existing departing-lead/no-entry checks. This is
 not an instantaneous toggle: process and plan cadence set the actual interval.
 It does not acknowledge the vehicle ECU's internal reset or prove the shorter
 interval is sufficient. Actual restart effectiveness requires a new vehicle test.
+
+## Preserve planning across the owned restart (2026-09-29)
+
+The fixed OFF dwell stays zero. Recorded re-entry briefly requested stopping
+acceleration after the normal planner OFF reset collapsed its plan to zero.
+Owned automatic restart now publishes its original request epoch. For at most
+300ms, a matching eligible planner with its own recent active departure plan
+preserves continuity while still solving on fresh live inputs. A restarted
+planner cannot claim continuity from the incoming marker alone. Ordinary cancel,
+pedal/hold/reset causes and other vehicles retain their normal reset behavior.
+LongControl still genuinely resets and sends zero acceleration while OFF.
+
+Re-enable requires the exact post-OFF plan consumed by controlsd, matching epoch,
+positive target and shouldStop=false, in addition to the existing lead/vehicle
+checks. The marker survives the enable-request/active-acknowledgment race and is
+cleared on acknowledgement or invalidation. Expiry abandons the attempt; an
+unacknowledged owned re-entry is cancelled once. This 300ms bound is a maximum
+continuity lifetime, not an added OFF wait or a vehicle-ECU acknowledgement.
+
+After an observed stopped OFF/ON, moving-only jerk assistance may raise the
+SCC14 upper jerk allowance toward 1.0 with at most 1.0/s added allowance. It is
+limited to 0.1m/s through 10km/h and three seconds after motion, with at most two
+seconds waiting for motion. It requires fresh plan/radar/vehicle source metadata,
+fresh TCS13 reporting no active brake control, a departing lead at least 2m away,
+positive request/target, nonnegative planned jerk and acceleration below both
+target and request by more than 0.15m/s². The original higher allowance is never
+reduced. Invalid inputs, pedals, braking or expired windows remove assistance.
+Acceleration requests, upper acceleration limits, StopReq, SCC modes, lower jerk
+and comfort bands are unchanged by this helper.
+
+Tests cover the reset-plan negative pulse versus the preserved departure plan,
+real OFF zero actuation, epoch/plan ordering, restarted planner rejection,
+driver override, fresh input metadata and CAN field preservation. Recorded-input
+jerk comparison changes the intended low-speed outputs; it is not a simulation
+of ESC response or evidence of faster physical launch. Vehicle benefit remains
+unvalidated until a new drive.

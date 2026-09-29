@@ -38,7 +38,8 @@ def setup():
   return sd, cs
 
 
-def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, driver_cancel=False, old_consumed_plan=False):
+def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, driver_cancel=False, old_consumed_plan=False,
+         plan_stop=False, epoch_override=None, plan_target=None):
   sd.events.clear()
   if driver_cancel:
     sd.events.add(log.OnroadEvent.EventName.buttonCancel)
@@ -55,7 +56,9 @@ def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, dri
   controls.longControlState = state
   controls.longitudinalPlanMonoTime = sd.casper_restart.request_ns if old_consumed_plan else sd.sm.logMonoTime['longitudinalPlan']
   plan.hasLead = True
-  plan.shouldStop = not departure or not sd.enabled
+  plan.shouldStop = plan_stop or not departure
+  plan.aTarget = (.2 if departure else -.5) if plan_target is None else plan_target
+  plan.casperRestartRequestMonoTime = sd.casper_restart.plan_marker(now) if epoch_override is None else epoch_override
   sd.update_casper_restart(cs, now)
   sd.enabled, sd.active = sd.state_machine.update(sd.events)
 
@@ -90,6 +93,23 @@ def test_zero_dwell_still_waits_until_controller_consumes_post_off_plan():
   assert sd.enabled
 
 
+def test_reentry_needs_current_positive_plan_and_matching_restart_epoch():
+  sd, cs = setup()
+  now = enter_owned_off(sd, cs)
+  tick(sd, cs, now + 10_000_000, departure=True)
+  tick(sd, cs, now + 20_000_000, departure=True, plan_stop=True)
+  assert not sd.enabled
+  tick(sd, cs, now + 30_000_000, departure=True, plan_target=0.)
+  assert not sd.enabled
+  tick(sd, cs, now + 40_000_000, departure=True, epoch_override=0)
+  assert not sd.enabled
+  tick(sd, cs, now + 50_000_000, departure=True)
+  assert sd.enabled and sd.casper_restart.plan_marker(now + 50_000_000)
+  tick(sd, cs, now + 60_000_000, departure=True)
+  assert sd.enabled and sd.casper_restart.reason == 'resume_complete'
+  assert sd.casper_restart.plan_marker(now + 60_000_000) == 0
+
+
 def test_moving_lead_waits_for_planner_and_controller_permission():
   sd, cs = setup()
   # The lead is already moving, but the planner continues to request stopping.
@@ -107,11 +127,11 @@ def test_slow_lead_does_not_delay_off_but_resume_waits_for_current_motion():
   lead.vRel = .1
   now = enter_owned_off(sd, cs)
   assert now == 2_200_000_000  # First cycle in which normal departure is allowed.
-  for i in range(1, 31):
+  for i in range(1, 21):
     tick(sd, cs, now + i * 10_000_000, departure=True)
     assert not sd.enabled and sd.casper_restart.phase == 'off'
   lead.vRel = .3
-  tick(sd, cs, now + 310_000_000, departure=True)
+  tick(sd, cs, now + 210_000_000, departure=True)
   assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
 
 
@@ -155,7 +175,7 @@ def test_positive_gap_below_two_meters_uses_normal_departure_permission(distance
   assert not sd.enabled and sd.casper_restart.phase == 'off'
   for i in range(1, 22):
     tick(sd, cs, 2_400_000_000 + i * 10_000_000, departure=True)
-  assert sd.enabled and sd.casper_restart.reason == 'resume_requested'
+  assert sd.enabled and sd.casper_restart.reason == 'resume_complete'
 
 
 @pytest.mark.parametrize('distance', [0.0, -1.0, float('nan'), float('inf')])
@@ -243,3 +263,32 @@ def test_normal_longcontrol_off_resets_and_serializes_real_disabled_modes(monkey
   uncorrected, _, _ = control.update(True, cs, plan, (-3.5, 2.0), 0, radar, launch_inputs_valid=False)
   assert control.casper_launch.correction == 0
   assert uncorrected < compensated
+
+
+def test_preserved_departure_plan_removes_reentry_brake_pulse_without_actuating_during_off(monkeypatch):
+  from opendbc.car.hyundai.values import CAR, HyundaiFlags
+  from opendbc.car.hyundai.tests.test_casper_departure_jerk import state
+  from openpilot.selfdrive.controls.lib.longcontrol import LongControl, LongCtrlState
+  from openpilot.selfdrive.controls.tests.test_longcontrol_hyundai_tuning import make_cp, DictParams
+  import openpilot.selfdrive.controls.lib.longcontrol as module
+  monkeypatch.setattr(module, 'Params', lambda: DictParams({}))
+  cp = make_cp()
+  cp.carFingerprint, cp.flags = CAR.HYUNDAI_CASPER, HyundaiFlags.CAMERA_SCC
+  cs = state().out
+  cs.vEgo, cs.aEgo, cs.softHoldActive, cs.canTimeout = 0., 0., 0, False
+  cs.cruiseState.standstill = False
+  radar = NS(leadOne=NS(status=True, dRel=4., vRel=1.))
+  reset_plan = NS(aTarget=0., vTargetNow=0., jTargetNow=0., shouldStop=True)
+  live_departure_plan = NS(aTarget=.3, vTargetNow=.01, jTargetNow=.5, shouldStop=False)
+  outputs = []
+  for post_off_plan in (reset_plan, live_departure_plan):
+    control = LongControl(cp)
+    for _ in range(120):
+      control.update(True, cs, reset_plan, (-3.5, 2.5), 0, radar)
+    control.update(True, cs, live_departure_plan, (-3.5, 2.5), 0, radar)
+    off, _, _ = control.update(False, cs, post_off_plan, (-3.5, 2.5), 0, radar)
+    assert off == 0 and control.long_control_state == LongCtrlState.off
+    value, _, _ = control.update(True, cs, post_off_plan, (-3.5, 2.5), 0, radar)
+    outputs.append(value)
+  assert outputs[0] < 0  # Reproduces the old reset-plan stopping ramp.
+  assert outputs[1] > 0  # Uses the live plan; no special brake-clamping rule.

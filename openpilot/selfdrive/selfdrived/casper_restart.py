@@ -4,18 +4,19 @@
 class CasperCruiseRestart:
   HOLD_NS = 1_000_000_000
   OFF_NS = 0  # Resume as soon as OFF and the post-OFF plan are acknowledged.
-  TIMEOUT_NS = 1_500_000_000
+  TIMEOUT_NS = 300_000_000  # bound planner continuity, not an added OFF dwell
 
   def __init__(self):
     self.phase = 'idle'
     self.hold_ns = 0
     self.request_ns = 0
     self.ack_ns = 0
+    self.resume_ns = 0
     self.last_ns = 0
     self.reason = ''
 
   def update(self, now_ns, *, enabled, healthy, stationary, stopping, departure,
-             off_ack, plan_after_off, user_input, moving, resume_ready=True):
+             off_ack, plan_after_off, user_input, moving, resume_ready=True, active_ack=False):
     action = None
     if moving:
       self.__init__()
@@ -24,21 +25,29 @@ class CasperCruiseRestart:
     gap = self.last_ns and (now_ns <= self.last_ns or now_ns - self.last_ns > 100_000_000)
     self.last_ns = now_ns
     if user_input or not healthy or gap:
+      action = 'off' if self.phase == 'resuming' and enabled and not user_input else None
       self.phase = 'spent'
       self.reason = 'driver_input' if user_input else 'unhealthy_or_gap'
       return action
     if self.phase == 'spent':
       return action
+    if self.phase in ('off', 'resuming') and now_ns - self.request_ns >= self.TIMEOUT_NS:
+      action = 'off' if self.phase == 'resuming' and enabled else None
+      self.phase, self.reason = 'spent', 'continuity_timeout'
+      return action
+    if self.phase == 'resuming':
+      if enabled and active_ack:
+        self.phase, self.reason = 'spent', 'resume_complete'
+      return action
     if self.phase == 'off':
-      if now_ns - self.request_ns > self.TIMEOUT_NS:
-        self.phase, self.reason = 'spent', 'off_ack_timeout'
-      elif not stationary:
+      if not stationary:
         self.phase, self.reason = 'spent', 'unexpected_motion'
       elif not enabled and off_ack:
         if not self.ack_ns:
           self.ack_ns = now_ns
         if now_ns - self.ack_ns >= self.OFF_NS and plan_after_off and resume_ready:
-          self.phase, self.reason = 'spent', 'resume_requested'
+          self.phase, self.reason = 'resuming', 'resume_requested'
+          self.resume_ns = now_ns
           action = 'on'
       elif self.ack_ns:
         self.phase, self.reason = 'spent', 'external_enable'
@@ -61,3 +70,8 @@ class CasperCruiseRestart:
       self.request_ns = now_ns
       action = 'off'
     return action
+
+  def plan_marker(self, now_ns):
+    if self.phase in ('off', 'resuming') and 0 <= now_ns - self.request_ns < self.TIMEOUT_NS:
+      return self.request_ns
+    return 0

@@ -154,7 +154,7 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode,
-                            long_active=False, diagnostics=None):
+                            long_active=False, diagnostics=None, launch_jerk_upper=None):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -236,6 +236,11 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
     values["ComfortBandUpper"] = jerk.cb_upper
     values["ComfortBandLower"] = jerk.cb_lower
     values["JerkUpperLimit"] = jerk.jerk_u
+    if (launch_jerk_upper is not None and CS.CP.carFingerprint == CAR.HYUNDAI_CASPER
+        and getattr(CS.CP, 'flags', 0) & HyundaiFlags.CAMERA_SCC and not getattr(CS.CP, 'flags', 0) & HyundaiFlags.CANFD
+        and CS.CP.openpilotLongitudinalControl and long_active and not stopping and accel > 0
+        and scc12_acc_mode == 1 and scc14_acc_mode == 1 and soft_hold_active == 0):
+      values["JerkUpperLimit"] = max(jerk.jerk_u, min(1.0, launch_jerk_upper))
     values["JerkLowerLimit"] = jerk.jerk_l if long_enabled else 0 # for KONA test
     values["ACCMode"] = scc14_acc_mode #2 if enabled and long_override else 1 if long_enabled else 4 # stock will always be 4 instead of 0 after first disengage
     values["ObjGap"] = objGap #2 if hud_control.leadVisible else 0 # 5: >30, m, 4: 25-30 m, 3: 20-25 m, 2: < 20 m, 0: no lead

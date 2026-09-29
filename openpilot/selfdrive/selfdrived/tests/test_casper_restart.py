@@ -16,7 +16,7 @@ class Episode:
     self.controller = CasperCruiseRestart()
     self.now = 1_000_000_000
     self.inputs = dict(enabled=True, healthy=True, stationary=True, stopping=True,
-                       departure=False, off_ack=False, plan_after_off=False, user_input=False, moving=False)
+                       departure=False, off_ack=False, plan_after_off=False, user_input=False, moving=False, active_ack=True)
 
   def tick(self, **changes):
     self.inputs.update(changes)
@@ -29,22 +29,22 @@ class Episode:
 
   def request_off(self):
     assert self.run(110) == []
-    assert self.run(11, stopping=False, departure=True) == ['off']
+    assert self.tick(stopping=False, departure=True) == 'off'
 
 
 class TestCasperCruiseRestart(unittest.TestCase):
   def test_one_owned_cycle_waits_for_ack_and_new_plan(self):
     episode = Episode()
     episode.request_off()
-    self.assertEqual(episode.run(20), [])
-    self.assertEqual(episode.run(56, enabled=False, off_ack=True), [])
+    self.assertEqual(episode.run(5), [])
+    self.assertEqual(episode.run(10, enabled=False, off_ack=True), [])
     self.assertEqual(episode.tick(plan_after_off=True), 'on')
     self.assertEqual(episode.run(200, enabled=True, off_ack=False), [])
 
   def test_no_fixed_dwell_after_required_acknowledgments(self):
     episode = Episode()
     episode.request_off()
-    self.assertEqual(episode.run(30, plan_after_off=True), [])
+    self.assertEqual(episode.run(5, plan_after_off=True), [])
     self.assertIsNone(episode.tick(enabled=False, off_ack=True, plan_after_off=False))
     self.assertEqual(episode.tick(plan_after_off=True), 'on')
 
@@ -57,7 +57,7 @@ class TestCasperCruiseRestart(unittest.TestCase):
   def test_resume_lead_wait_is_bounded_and_does_not_abort_immediately(self):
     episode = Episode()
     episode.request_off()
-    self.assertEqual(episode.run(40, enabled=False, off_ack=True,
+    self.assertEqual(episode.run(10, enabled=False, off_ack=True,
                                  plan_after_off=True, resume_ready=False), [])
     self.assertEqual(episode.controller.phase, 'off')
     self.assertEqual(episode.tick(resume_ready=True), 'on')
@@ -148,13 +148,42 @@ class TestCasperCruiseRestart(unittest.TestCase):
     self.assertEqual(episode.run(120, stationary=True, stopping=True, departure=False), [])
     self.assertEqual(episode.run(20, stopping=False, departure=True), [])
 
-  def test_off_planner_reset_does_not_prevent_owned_resume(self):
-    # The caller independently validates the moving lead while OFF. A reset
-    # longitudinal planner can report stopping until enabled again.
+  def test_caller_plan_permission_is_required_during_owned_off(self):
     episode = Episode()
     episode.request_off()
-    self.assertEqual(episode.run(56, enabled=False, off_ack=True, departure=False,
-                                 stopping=True, plan_after_off=True), ['on'])
+    self.assertEqual(episode.run(10, enabled=False, off_ack=True, departure=False,
+                                 stopping=True, plan_after_off=True, resume_ready=False), [])
+    self.assertEqual(episode.tick(resume_ready=True), 'on')
+
+  def test_marker_spans_on_request_until_controller_ack(self):
+    episode = Episode()
+    episode.request_off()
+    marker = episode.controller.request_ns
+    self.assertEqual(episode.controller.plan_marker(episode.now), marker)
+    episode.tick(enabled=False, off_ack=True)
+    self.assertEqual(episode.tick(plan_after_off=True), 'on')
+    self.assertEqual(episode.controller.plan_marker(episode.now), marker)
+    episode.tick(enabled=True, active_ack=True)
+    self.assertEqual(episode.controller.reason, 'resume_complete')
+    self.assertEqual(episode.controller.plan_marker(episode.now), 0)
+
+  def test_epoch_expires_without_refreshing_at_boundary(self):
+    episode = Episode()
+    episode.request_off()
+    request = episode.controller.request_ns
+    self.assertEqual(episode.run(29, enabled=False, off_ack=True), [])
+    self.assertEqual(episode.controller.plan_marker(request + 299_999_999), request)
+    self.assertEqual(episode.controller.plan_marker(request + 300_000_000), 0)
+    self.assertIsNone(episode.tick(plan_after_off=True))
+    self.assertEqual(episode.controller.phase, 'spent')
+
+  def test_missing_active_ack_cancels_owned_reentry_once(self):
+    episode = Episode()
+    episode.request_off()
+    episode.tick(enabled=False, off_ack=True, active_ack=False)
+    self.assertEqual(episode.tick(plan_after_off=True), 'on')
+    self.assertEqual(episode.run(30, enabled=True), ['off'])
+    self.assertEqual(episode.run(100), [])
 
 
 class TestRestartWithRealStateMachine(unittest.TestCase):

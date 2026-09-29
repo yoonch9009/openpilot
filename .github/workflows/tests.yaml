@@ -79,6 +79,19 @@ jobs:
             openpilot/selfdrive/controls/tests/test_desire_helper.py \
             openpilot/system/tests/test_c3_agnos_manifest.py
 
+
+      - name: Check Casper restart continuity and launch bounds
+        run: |
+          python -m pytest -o addopts='' -q \
+            openpilot/selfdrive/selfdrived/tests/test_casper_restart.py \
+            openpilot/selfdrive/selfdrived/tests/test_casper_restart_integration.py \
+            openpilot/selfdrive/controls/lib/tests/test_casper_restart_plan.py \
+            openpilot/selfdrive/controls/tests/test_casper_launch.py \
+            openpilot/selfdrive/controls/tests/test_longcontrol_hyundai_tuning.py \
+            opendbc_repo/opendbc/car/hyundai/tests/test_casper_launch_jerk.py \
+            opendbc_repo/opendbc/car/hyundai/tests/test_casper_launch_inputs.py \
+            opendbc_repo/opendbc/car/hyundai/tests/test_casper_departure_jerk.py
+
   model_web:
     name: Model and Bluetooth web controls
     runs-on: ubuntu-24.04

@@ -175,11 +175,14 @@ class Controls:
     pid_accel_limits = self.CI.get_pid_accel_limits(self.CP, CS.vEgo, CS.vCruise * CV.KPH_TO_MS)
     t_since_plan = (self.sm.frame - self.sm.recv_frame['longitudinalPlan']) * DT_CTRL
     launch_inputs_valid = True
+    CC.casperLaunchInputsMonoTime = 0
     if self.LoC.casper_launch is not None:
       now_ns = time.monotonic_ns()
       launch_sources = ('carState', 'longitudinalPlan', 'radarState')
       launch_inputs_valid = self.sm.all_checks(launch_sources) and all(
         0 <= now_ns - self.sm.logMonoTime[s] <= 300_000_000 for s in launch_sources)
+      if launch_inputs_valid:
+        CC.casperLaunchInputsMonoTime = min(self.sm.logMonoTime[s] for s in launch_sources)
     accel, aTarget, jerk = self.LoC.update(CC.longActive, CS, long_plan, pid_accel_limits, t_since_plan,
                                          self.sm['radarState'], launch_inputs_valid=launch_inputs_valid)
     actuators.longControlState = self.LoC.long_control_state

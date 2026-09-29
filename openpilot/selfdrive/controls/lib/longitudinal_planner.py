@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import numpy as np
+from time import monotonic_ns
 
 import openpilot.cereal.messaging as messaging
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
+from opendbc.car.hyundai.values import CAR, HyundaiFlags
+from openpilot.selfdrive.controls.lib.casper_restart_plan import accepted_restart_request, fresh_input_snapshot_time, planner_reset_state
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.common.realtime import DT_MDL
@@ -56,6 +59,13 @@ class LongitudinalPlanner:
     self.is_vw_meb = is_volkswagen_meb(CP)
     self.dt = dt
     self.allow_throttle = True
+    self.casper_restart_eligible = (
+      CP.carFingerprint == CAR.HYUNDAI_CASPER and CP.openpilotLongitudinalControl
+      and not CP.pcmCruise and bool(CP.flags & HyundaiFlags.CAMERA_SCC)
+      and not bool(CP.flags & HyundaiFlags.CANFD)
+    )
+    self.casper_restart_request_ns = 0
+    self.casper_prior_departure_ns = 0
 
     self.a_desired = init_a
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
@@ -151,9 +161,24 @@ class LongitudinalPlanner:
     force_slow_decel = sm['controlsState'].forceDecel
 
     # Reset current state when not engaged, or user is controlling the speed
-    reset_state = long_control_off if self.CP.openpilotLongitudinalControl else not sm['selfdriveState'].enabled
-    # PCM cruise speed may be updated a few cycles later, check if initialized
-    reset_state = reset_state or not v_cruise_initialized or carrot.soft_hold_active
+    driver_input = bool(sm['carState'].buttonEvents or sm['carState'].gasPressed or sm['carState'].brakePressed)
+    if driver_input or force_slow_decel:
+      self.casper_prior_departure_ns = 0
+    restart_request = accepted_restart_request(
+      sm, monotonic_ns(), eligible=self.casper_restart_eligible,
+      soft_hold_active=carrot.soft_hold_active, force_decel=force_slow_decel,
+      prior_departure_ns=self.casper_prior_departure_ns,
+    )
+    # Preserve the live MPC only for a fresh owned OFF interval. Cruise initialization
+    # and soft hold still reset it; the normal solver and all braking inputs run below.
+    reset_state, self.casper_restart_request_ns = planner_reset_state(
+      openpilot_longitudinal=self.CP.openpilotLongitudinalControl,
+      long_control_off=long_control_off, enabled=sm['selfdriveState'].enabled,
+      cruise_initialized=v_cruise_initialized, soft_hold_active=carrot.soft_hold_active,
+      accepted_request=restart_request,
+    )
+    if reset_state:
+      self.casper_prior_departure_ns = 0
 
     # No change cost when user is controlling the speed, or when standstill
     prev_accel_constraint = not (reset_state or sm['carState'].standstill)
@@ -395,6 +420,16 @@ class LongitudinalPlanner:
     else:
       self.coasting.reset()
 
+    # Record only a normally engaged live departure plan. Never renew this history
+    # while an owned marker is present, including its short post-enable tail.
+    if (self.casper_restart_eligible and not reset_state and not driver_input and not force_slow_decel
+        and sm['selfdriveState'].enabled and not long_control_off
+        and not getattr(sm['selfdriveState'], 'casperRestartRequestMonoTime', 0)
+        and np.isfinite(self.output_a_target) and self.output_a_target > 0 and not self.output_should_stop):
+      snapshot_ns = fresh_input_snapshot_time(sm, monotonic_ns())
+      if snapshot_ns:
+        self.casper_prior_departure_ns = snapshot_ns
+
   def publish(
     self,
     sm,
@@ -414,6 +449,7 @@ class LongitudinalPlanner:
     plan_send.valid = sm.all_checks(service_list=['carState', 'controlsState', 'selfdriveState'])
 
     longitudinalPlan = plan_send.longitudinalPlan
+    longitudinalPlan.casperRestartRequestMonoTime = self.casper_restart_request_ns
     longitudinalPlan.modelMonoTime = sm.logMonoTime['modelV2']
     longitudinalPlan.deprecated.radarStateMonoTime = sm.logMonoTime['radarState']
     longitudinalPlan.processingDelay = (plan_send.logMonoTime - sm.logMonoTime['modelV2']) / 1e9

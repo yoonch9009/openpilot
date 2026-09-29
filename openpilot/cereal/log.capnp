@@ -820,6 +820,8 @@ struct SelfdriveState {
   experimentalMode @10 :Bool;
   personality @11 :LongitudinalPersonality;
   distanceTraveled @13 :Float32;
+  # Owned Casper cancel/resume epoch; never enables actuators by itself.
+  casperRestartRequestMonoTime @14 :UInt64;
 
   enum OpenpilotState @0xdbe58b96d2d1ac61 {
     disabled @0;
@@ -1247,6 +1249,8 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   # Optional overspeed brake relief. Zero target/percent preserves legacy control.
   cruiseCoastingTarget @62 :Float32;  # fixed physical m/s reference; 0 when ineligible
   cruiseCoastingPercent @63 :UInt8;
+  # Echo only when the bounded owned-restart planner continuity was accepted.
+  casperRestartRequestMonoTime @64 :UInt64;
 
   solverExecutionTime @35 :Float32;
 
