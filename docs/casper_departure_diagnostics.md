@@ -21,10 +21,13 @@ contained snapshot/transport exceptions, not silent IPC drops.
    `handoff_active` field stays false for compatibility with prior recordings.
    DCEnable is not brake pressure.
    `res_held`, `res_release_ns`, `res_plan_ready` and
-   `departure_inputs_mono_ns` distinguish a held RES button from the fresh,
+   `departure_inputs_mono_ns` distinguish held RES/+ or SET/- buttons from the fresh,
    normally engaged departure solve needed after release. Empty buttonEvents
-   is not a release event. Already-engaged waiting RES operations preserve
+   is not a release event. Already-engaged waiting RES/+ and SET/- operations preserve
    preparation; other buttons, pedals and inputs during owned OFF/ON abort it.
+   The historical `res_*` field names cover both speed-setting buttons. Normal
+   set-speed adjustment is unchanged; only automatic-restart preparation is
+   preserved through these already-engaged waiting operations.
 2. **Lead consistency:** Control snapshots contain plan hasLead, current radar
    lead and transmitted HUD lead fields, alongside service publication times,
    validity and alive flags. These are publication times, not sensor capture
@@ -124,3 +127,9 @@ and Casper-only range-evidence reuse. The wider Hyundai firmware/fingerprint
 data test has the same 16 failing entries on the unchanged b3da211 baseline;
 these were reproduced separately and are outside this change. These software
 results do not establish actual vehicle response improvements.
+
+The SET/- follow-up uses the same waiting-button path as RES/+. Its targeted
+native regression run passed 82 tests and 72 subtests, including held/released
+SET inputs, stale departure plans, simultaneous cancellation, pedal priority,
+late release during owned OFF and nonpositive/stopping plans. Vehicle behavior
+after this follow-up has not yet been compared on a new drive.

@@ -19,9 +19,9 @@ class CasperCruiseRestart:
     self.res_wait_reason = ''
 
   def classify_input(self, now_ns, *, enabled, stationary, pedal, buttons):
-    """Only already-engaged waiting RES edges are non-cancelling input."""
+    """Only already-engaged waiting RES/SET edges are non-cancelling input."""
     waiting = enabled and stationary and self.phase in ('idle', 'holding')
-    allowed = {'accelCruise', 'resumeCruise'}
+    allowed = {'accelCruise', 'resumeCruise', 'decelCruise'}
     if pedal or (buttons and (not waiting or any(name not in allowed for name, _ in buttons))):
       self.res_wait_reason = 'external_input'
       return True

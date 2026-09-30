@@ -295,12 +295,13 @@ def test_preserved_departure_plan_removes_reentry_brake_pulse_without_actuating_
   assert outputs[1] > 0  # Uses the live plan; no special brake-clamping rule.
 
 
-def test_waiting_res_requires_release_and_new_consumed_departure_plan():
+@pytest.mark.parametrize('button_type', ['accelCruise', 'resumeCruise', 'decelCruise'])
+def test_waiting_res_requires_release_and_new_consumed_departure_plan(button_type):
   sd, cs = setup()
   for i in range(110):
     tick(sd, cs, 1_000_000_000 + i * 10_000_000)
   now = 2_100_000_000
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=True)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=True)]
   tick(sd, cs, now, departure=True)
   assert sd.casper_restart.phase == 'holding'
   cs.buttonEvents = []
@@ -308,7 +309,7 @@ def test_waiting_res_requires_release_and_new_consumed_departure_plan():
     tick(sd, cs, now + i * 10_000_000, departure=True)
     assert sd.enabled and sd.casper_restart.phase == 'holding'
   now += 530_000_000
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=False)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=False)]
   tick(sd, cs, now, departure=True)
   assert sd.enabled and sd.casper_restart.phase == 'holding'
   cs.buttonEvents = []
@@ -325,7 +326,8 @@ def test_waiting_res_requires_release_and_new_consumed_departure_plan():
 
 
 @pytest.mark.parametrize('phase', ['holding', 'off'])
-def test_cancel_mixed_with_res_has_priority(phase):
+@pytest.mark.parametrize('button_type', ['accelCruise', 'resumeCruise', 'decelCruise'])
+def test_cancel_mixed_with_res_has_priority(phase, button_type):
   sd, cs = setup()
   if phase == 'off':
     now = enter_owned_off(sd, cs)
@@ -333,19 +335,20 @@ def test_cancel_mixed_with_res_has_priority(phase):
     for i in range(110):
       tick(sd, cs, 1_000_000_000 + i * 10_000_000)
     now = 2_100_000_000
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=True),
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=True),
                      car.CarState.ButtonEvent.new_message(type='cancel', pressed=True)]
   tick(sd, cs, now + 10_000_000, departure=True, driver_cancel=True)
   assert not sd.enabled and sd.casper_restart.phase == 'spent'
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=False)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=False)]
   tick(sd, cs, now + 20_000_000, departure=True)
   assert not sd.enabled and sd.casper_restart.phase == 'spent'
 
 
-def test_late_res_release_during_owned_off_aborts():
+@pytest.mark.parametrize('button_type', ['accelCruise', 'resumeCruise', 'decelCruise'])
+def test_late_res_release_during_owned_off_aborts(button_type):
   sd, cs = setup()
   now = enter_owned_off(sd, cs)
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=False)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=False)]
   tick(sd, cs, now + 10_000_000, departure=True)
   assert not sd.enabled and sd.casper_restart.phase == 'spent'
 
@@ -367,17 +370,37 @@ def test_recorded_1833_waiting_res_then_departure_remains_armed():
   assert not sd.enabled and sd.casper_restart.phase == 'off'
 
 
-def test_pedal_while_res_held_cannot_restore_automatic_episode():
+@pytest.mark.parametrize('button_type', ['accelCruise', 'resumeCruise', 'decelCruise'])
+def test_pedal_while_res_held_cannot_restore_automatic_episode(button_type):
   sd, cs = setup()
   for i in range(110):
     tick(sd, cs, 1_000_000_000 + i * 10_000_000)
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=True)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=True)]
   tick(sd, cs, 2_100_000_000)
   cs.buttonEvents = []
   cs.brakePressed = True
   tick(sd, cs, 2_110_000_000)
   assert sd.casper_restart.phase == 'spent'
   cs.brakePressed = False
-  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=False)]
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=False)]
   tick(sd, cs, 2_120_000_000, departure=True)
   assert sd.casper_restart.phase == 'spent' and sd.casper_restart.request_ns == 0
+
+
+@pytest.mark.parametrize('button_type', ['accelCruise', 'resumeCruise', 'decelCruise'])
+@pytest.mark.parametrize('target', [0., -.2])
+def test_waiting_speed_button_cannot_override_a_stop_or_nonpositive_plan(button_type, target):
+  sd, cs = setup()
+  for i in range(110):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=True)]
+  tick(sd, cs, 2_100_000_000, departure=True)
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type=button_type, pressed=False)]
+  tick(sd, cs, 2_110_000_000, departure=True)
+  cs.buttonEvents = []
+  tick(sd, cs, 2_120_000_000, departure=True, plan_target=target)
+  assert sd.enabled and sd.casper_restart.request_ns == 0
+  tick(sd, cs, 2_130_000_000, departure=True, plan_stop=True)
+  assert sd.enabled and sd.casper_restart.request_ns == 0
+  tick(sd, cs, 2_140_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'off'
