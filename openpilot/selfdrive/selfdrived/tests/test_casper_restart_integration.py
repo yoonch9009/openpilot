@@ -12,7 +12,7 @@ from openpilot.selfdrive.selfdrived.state import StateMachine
 
 class SM(dict):
   def refresh(self, now):
-    self.logMonoTime = {k: now - 1_000_000 for k in self}
+    self.logMonoTime = {k: now - (2_000_000 if k == 'longitudinalPlan' else 1_000_000) for k in self}
     self.alive = dict.fromkeys(self, True)
     self.valid = dict.fromkeys(self, True)
 
@@ -39,7 +39,7 @@ def setup():
 
 
 def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, driver_cancel=False, old_consumed_plan=False,
-         plan_stop=False, epoch_override=None, plan_target=None):
+         plan_stop=False, epoch_override=None, plan_target=None, departure_inputs_ns=None):
   sd.events.clear()
   if driver_cancel:
     sd.events.add(log.OnroadEvent.EventName.buttonCancel)
@@ -55,6 +55,7 @@ def tick(sd, cs, now, *, departure=False, stale_cs=False, stale_source=None, dri
   cc.actuators.accel = 0 if not sd.enabled else (.2 if departure else -.5)
   controls.longControlState = state
   controls.longitudinalPlanMonoTime = sd.casper_restart.request_ns if old_consumed_plan else sd.sm.logMonoTime['longitudinalPlan']
+  plan.casperDepartureInputsMonoTime = now - 3_000_000 if departure_inputs_ns is None else departure_inputs_ns
   plan.hasLead = True
   plan.shouldStop = plan_stop or not departure
   plan.aTarget = (.2 if departure else -.5) if plan_target is None else plan_target
@@ -292,3 +293,91 @@ def test_preserved_departure_plan_removes_reentry_brake_pulse_without_actuating_
     outputs.append(value)
   assert outputs[0] < 0  # Reproduces the old reset-plan stopping ramp.
   assert outputs[1] > 0  # Uses the live plan; no special brake-clamping rule.
+
+
+def test_waiting_res_requires_release_and_new_consumed_departure_plan():
+  sd, cs = setup()
+  for i in range(110):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+  now = 2_100_000_000
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=True)]
+  tick(sd, cs, now, departure=True)
+  assert sd.casper_restart.phase == 'holding'
+  cs.buttonEvents = []
+  for i in range(1, 53):
+    tick(sd, cs, now + i * 10_000_000, departure=True)
+    assert sd.enabled and sd.casper_restart.phase == 'holding'
+  now += 530_000_000
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=False)]
+  tick(sd, cs, now, departure=True)
+  assert sd.enabled and sd.casper_restart.phase == 'holding'
+  cs.buttonEvents = []
+  tick(sd, cs, now + 1_000_000, departure=True)  # Published plan still predates release.
+  assert sd.enabled
+  tick(sd, cs, now + 10_000_000, departure=True, old_consumed_plan=True)
+  assert sd.enabled
+  tick(sd, cs, now + 20_000_000, departure=True, departure_inputs_ns=0)
+  assert sd.enabled
+  tick(sd, cs, now + 30_000_000, departure=True, departure_inputs_ns=now - 1)
+  assert sd.enabled
+  tick(sd, cs, now + 40_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'off'
+
+
+@pytest.mark.parametrize('phase', ['holding', 'off'])
+def test_cancel_mixed_with_res_has_priority(phase):
+  sd, cs = setup()
+  if phase == 'off':
+    now = enter_owned_off(sd, cs)
+  else:
+    for i in range(110):
+      tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+    now = 2_100_000_000
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=True),
+                     car.CarState.ButtonEvent.new_message(type='cancel', pressed=True)]
+  tick(sd, cs, now + 10_000_000, departure=True, driver_cancel=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=False)]
+  tick(sd, cs, now + 20_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
+
+
+def test_late_res_release_during_owned_off_aborts():
+  sd, cs = setup()
+  now = enter_owned_off(sd, cs)
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=False)]
+  tick(sd, cs, now + 10_000_000, departure=True)
+  assert not sd.enabled and sd.casper_restart.phase == 'spent'
+
+
+def test_recorded_1833_waiting_res_then_departure_remains_armed():
+  sd, cs = setup()
+  # Relative to observed holding: RES press +1.671s, release +2.194s,
+  # planner departure +10.271s. Replay at the binder's 100 Hz cadence.
+  for i in range(1029):
+    cs.buttonEvents = []
+    if i == 167:
+      cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=True)]
+    elif i == 220:
+      cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='accelCruise', pressed=False)]
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000, departure=i >= 1028)
+    if i < 1028:
+      assert sd.enabled and sd.casper_restart.phase == 'holding'
+      assert sd.casper_restart.request_ns == 0
+  assert not sd.enabled and sd.casper_restart.phase == 'off'
+
+
+def test_pedal_while_res_held_cannot_restore_automatic_episode():
+  sd, cs = setup()
+  for i in range(110):
+    tick(sd, cs, 1_000_000_000 + i * 10_000_000)
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=True)]
+  tick(sd, cs, 2_100_000_000)
+  cs.buttonEvents = []
+  cs.brakePressed = True
+  tick(sd, cs, 2_110_000_000)
+  assert sd.casper_restart.phase == 'spent'
+  cs.brakePressed = False
+  cs.buttonEvents = [car.CarState.ButtonEvent.new_message(type='resumeCruise', pressed=False)]
+  tick(sd, cs, 2_120_000_000, departure=True)
+  assert sd.casper_restart.phase == 'spent' and sd.casper_restart.request_ns == 0

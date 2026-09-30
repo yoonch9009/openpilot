@@ -75,6 +75,38 @@ def test_build_failure_is_contained_and_malformed_logs_ignored():
     assert parse_diagnostic(text) is None
 
 
+def test_launch_episode_and_received_transitions_are_distinct_from_old_standstill_checks():
+  cs = state()
+  cs.out.standstill = False
+  cs.out.vEgo = cs.out.vEgoRaw = .4
+  cs.casper_brake_control_active = False
+  cs.casper_tcs13_feedback = {'DCEnable': 0., 'TQI_SCC': 4.}
+  cs.casper_tcs13_transitions_ns = {'DCEnable': 100, 'TQI_SCC_positive': 140}
+  cs.casper_raw_moving, cs.casper_raw_motion_mono_ns = True, 200
+  snapshot = dict(stage='paused', reason='planned_jerk_negative', wait_until=12., end_time=14., extra=0.)
+  before = copy.deepcopy(cs)
+  records = []
+  baseline = request(cs)
+  assert request(cs, diagnostics=CasperDiagnostics('scc', records.append), launch_jerk_diagnostic=lambda: snapshot) == baseline
+  record = records[0]
+  assert record['checks_scope'] == 'legacy_standstill_trial'
+  assert record['blocked_by']  # Old standstill checks fail on a moving, released vehicle.
+  assert record['launch_jerk'] == snapshot
+  assert record['brake_feedback']['DCEnable'] == 0.
+  assert record['feedback_transitions_mono_ns']['TQI_SCC_positive'] == 140
+  assert record['raw_motion_transition_mono_ns'] == 200
+  assert cs == before
+
+
+def test_failed_launch_snapshot_cannot_change_can_commands():
+  cs = state()
+  diagnostic = CasperDiagnostics('scc', lambda _: None)
+  def broken_snapshot():
+    raise ValueError('diagnostic field unavailable')
+  assert request(cs, diagnostics=diagnostic, launch_jerk_diagnostic=broken_snapshot) == request(cs)
+  assert diagnostic.errors == 1
+
+
 def test_plan_and_radar_disagreement_is_recorded_without_rewriting_hud():
   class SM(dict):
     logMonoTime = {'radarState': 100, 'longitudinalPlan': 80, 'carState': 110}

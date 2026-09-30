@@ -589,17 +589,23 @@ class CarController(CarControllerBase):
         use_fca = self.CP.flags & HyundaiFlags.USE_FCA.value
         if camera_scc:
           launch_jerk_upper = None
+          launch_jerk_diagnostic = None
           if self.casper_launch_jerk is not None:
             tcs_time = getattr(CS, 'casper_tcs13_mono_ns', 0)
             feedback_fresh = tcs_time > 0 and 0 <= now_nanos - tcs_time <= 100_000_000
             launch_input_time = getattr(CC, 'casperLaunchInputsMonoTime', 0)
             launch_inputs_fresh = launch_input_time > 0 and 0 <= now_nanos - launch_input_time <= 300_000_000
-            healthy = (CS.out.canValid and not CS.out.canTimeout and not CS.out.accFaulted
-                       and CS.out.gearShifter == structs.CarState.GearShifter.drive and CS.out.cruiseState.available
-                       and not CS.out.brakePressed and not CS.out.gasPressed and not CS.out.parkingBrake
-                       and not CS.out.brakeHoldActive and CS.softHoldActive == 0 and not CC.cruiseControl.override
-                       and self.hyundai_jerk.carrot_cruise == 0 and CS.scc12 is not None and CS.scc14 is not None
-                       and launch_inputs_fresh)
+            health_checks = dict(
+              can_valid=bool(CS.out.canValid), can_recent=not CS.out.canTimeout, no_acc_fault=not CS.out.accFaulted,
+              drive=CS.out.gearShifter == structs.CarState.GearShifter.drive,
+              cruise_available=bool(CS.out.cruiseState.available), no_brake=not CS.out.brakePressed,
+              no_gas=not CS.out.gasPressed, no_parking_brake=not CS.out.parkingBrake,
+              no_brake_hold=not CS.out.brakeHoldActive, no_soft_hold=CS.softHoldActive == 0,
+              no_override=not CC.cruiseControl.override, no_carrot_override=self.hyundai_jerk.carrot_cruise == 0,
+              scc12_present=CS.scc12 is not None, scc14_present=CS.scc14 is not None,
+              launch_inputs_fresh=launch_inputs_fresh,
+            )
+            healthy = all(health_checks.values())
             launch_jerk_upper = self.casper_launch_jerk.update(
               now_nanos / 1e9, active=CC.enabled and CC.longActive, stopping=stopping, speed=CS.out.vEgo,
               healthy=healthy, feedback_fresh=feedback_fresh,
@@ -608,12 +614,22 @@ class CarController(CarControllerBase):
               lead_relative_speed=hud_control.leadRelSpeed, target=actuators.aTarget, request=accel,
               measured=CS.out.aEgo, planned_jerk=actuators.jerk if actuators.longControlState == LongCtrlState.pid else -1.0,
               original=self.hyundai_jerk.jerk_u)
+            def launch_jerk_diagnostic():
+              return dict(
+                self.casper_launch_jerk.diagnostic_snapshot(), healthy=healthy, health_checks=health_checks,
+                health_blocked_by=[name for name, ok in health_checks.items() if not ok],
+                feedback_fresh=feedback_fresh, tcs_age_ns=now_nanos - tcs_time if tcs_time else None,
+                input_age_ns=now_nanos - launch_input_time if launch_input_time else None,
+                input_mono_ns=launch_input_time, target_accel=float(actuators.aTarget),
+                request_accel=float(accel), measured_accel=float(CS.out.aEgo), planned_jerk=float(actuators.jerk),
+              )
 
           can_sends.extend(hyundaican.create_acc_commands_scc(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                           hud_control, set_speed_in_units, stopping,
                                                           CC.cruiseControl.override, casper_ev, CS, self.soft_hold_mode,
                                                           long_active=CC.longActive and actuators.longControlState == LongCtrlState.pid,
-                                                          diagnostics=self.casper_diagnostics, launch_jerk_upper=launch_jerk_upper))
+                                                          diagnostics=self.casper_diagnostics, launch_jerk_upper=launch_jerk_upper,
+                                                          launch_jerk_diagnostic=launch_jerk_diagnostic))
         else:
           can_sends.extend(hyundaican.create_acc_commands(self.packer, CC.enabled, accel, self.hyundai_jerk, int(self.frame / 2),
                                                 hud_control, set_speed_in_units, stopping,

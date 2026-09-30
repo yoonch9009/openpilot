@@ -45,6 +45,8 @@ def control_snapshot(sm, CS, CC, publish_ns, launch_correction=0.0):
     services={name: dict(mono_ns=int(sm.logMonoTime[name]), valid=bool(sm.valid[name]),
                         alive=bool(sm.alive[name])) for name in ('radarState', 'longitudinalPlan', 'carState')},
     plan_has_lead=bool(plan.hasLead), should_stop=bool(plan.shouldStop), target_accel=float(plan.aTarget),
+    departure_inputs_mono_ns=int(getattr(plan, 'casperDepartureInputsMonoTime', 0)),
+    restart_request_mono_ns=int(getattr(plan, 'casperRestartRequestMonoTime', 0)),
     lead_visibility_disagreement=bool(plan.hasLead) != bool(radar.status),
     radar_lead=dict(status=bool(radar.status), distance=float(radar.dRel), relative_speed=float(radar.vRel)),
     hud_lead=dict(visible=bool(CC.hudControl.leadVisible), distance=float(CC.hudControl.leadDistance),
@@ -53,11 +55,13 @@ def control_snapshot(sm, CS, CC, publish_ns, launch_correction=0.0):
     state=str(CC.actuators.longControlState), request_accel=float(CC.actuators.accel),
     launch_accel_correction=float(launch_correction),
     request_jerk=float(CC.actuators.jerk), speed=float(CS.vEgo), estimated_accel=float(CS.aEgo), standstill=bool(CS.standstill),
+    raw_speed=float(getattr(CS, 'vEgoRaw', CS.vEgo)),
     gas=bool(CS.gasPressed), brake=bool(CS.brakePressed), gear=str(CS.gearShifter),
     parking_brake=bool(CS.parkingBrake), brake_hold=bool(CS.brakeHoldActive))
 
 
-def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk, upper, mode12, mode14, stop_req, handoff_active=False):
+def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk, upper, mode12, mode14, stop_req,
+                 handoff_active=False, launch_snapshot=None):
   from opendbc.car import structs
   checks = dict(enabled=bool(enabled), long_active=bool(long_active), not_stopping=not stopping,
                 finite_requests=math.isfinite(accel) and math.isfinite(jerk.jerk_u),
@@ -72,6 +76,12 @@ def scc_snapshot(CS, enabled, long_active, stopping, accel, override, hud, jerk,
                 positive_lead_distance=hud.leadDistance > 0, departing_lead=hud.leadRelSpeed > 0,
                 active_modes=(mode12 == 1 and mode14 == 1) or (handoff_active and mode12 == 2 and mode14 == 2))
   return dict(checks=checks, blocked_by=[name for name, ok in checks.items() if not ok],
+              checks_scope='legacy_standstill_trial', launch_jerk=launch_snapshot or {},
+              brake_feedback=dict(getattr(CS, 'casper_tcs13_feedback', {})),
+              feedback_transitions_mono_ns=dict(getattr(CS, 'casper_tcs13_transitions_ns', {})),
+              raw_speed=float(getattr(CS.out, 'vEgoRaw', CS.out.vEgo)),
+              raw_moving=bool(getattr(CS, 'casper_raw_moving', False)),
+              raw_motion_transition_mono_ns=int(getattr(CS, 'casper_raw_motion_mono_ns', 0)),
               jerk_before=float(jerk.jerk_u), jerk_after=float(upper), jerk_changed=upper != jerk.jerk_u,
               handoff_active=bool(handoff_active),
               floor_already_met=jerk.jerk_u >= 1.0,

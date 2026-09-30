@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import time
 
+from opendbc.car.hyundai.values import CAR, HyundaiFlags
 from openpilot.cereal import car
+from openpilot.common.casper_diagnostics import CasperDiagnostics
 from openpilot.common.params import Params
 from openpilot.common.realtime import Priority, config_realtime_process
 from openpilot.common.swaglog import cloudlog
@@ -22,6 +24,37 @@ from openpilot.selfdrive.carrot.radar_motion.timing import front_radar_distance_
 
 LIVE_TRACKS_FALLBACK_TIMEOUT_S = 0.10
 MIN_LONGITUDINAL_PLAN_INTERVAL_NS = 25_000_000
+
+
+def _lead_snapshot(lead):
+  return dict(
+    status=bool(lead.status), radar=bool(lead.radar), track_id=int(lead.radarTrackId),
+    distance=float(lead.dRel), relative_speed=float(lead.vRel), speed=float(lead.vLead),
+    filtered_speed=float(lead.vLeadK), accel=float(lead.aLeadK), jerk=float(lead.jLead),
+  )
+
+
+def _casper_planner_snapshot(sm, filter_input, filtered_input, stopping_lead_filter, plan_send,
+                             lead_mono_times, fast_lead_mask, planning_trigger, trigger_mono_ns):
+  plan = plan_send.longitudinalPlan
+  return dict(
+    current_mono_ns=time.monotonic_ns(), plan_publish_mono_ns=int(plan_send.logMonoTime),
+    planning_trigger=planning_trigger, trigger_mono_ns=int(trigger_mono_ns), fast_lead_mask=fast_lead_mask,
+    services={name: dict(mono_ns=int(sm.logMonoTime[name]), valid=bool(sm.valid[name]),
+                        alive=bool(sm.alive[name])) for name in ('carState', 'radarState', 'liveTracks', 'modelV2')},
+    # The overlay input may include time-aligned range: it is the actual filter
+    # input, not an independent physical-motion or raw-CAN measurement.
+    filter_input_mono_times=dict(lead_mono_times),
+    filter_input_leads={role: _lead_snapshot(getattr(filter_input, role)) for role in ('leadOne', 'leadTwo')},
+    filtered_leads={role: _lead_snapshot(getattr(filtered_input, role)) for role in ('leadOne', 'leadTwo')},
+    stopping_lead_filter=stopping_lead_filter.snapshot(),
+    plan_should_stop=bool(plan.shouldStop), plan_target_accel=float(plan.aTarget),
+    plan_target_accel_base=float(plan.aTargetBase), plan_target_speed=float(plan.vTargetNow),
+    plan_target_jerk=float(plan.jTargetNow), processing_delay_s=float(plan.processingDelay),
+    planner_execution_time_s=float(plan.plannerExecutionTime), mpc_source=str(plan.longitudinalPlanSource),
+    fcw=bool(plan.fcw), speed=float(sm['carState'].vEgo), gas=bool(sm['carState'].gasPressed),
+    long_control_state=str(sm['controlsState'].longControlState),
+  )
 
 
 def main():
@@ -51,7 +84,16 @@ def main():
   fast_radar = FastRadarOverlay(
     front_radar_delay_s=front_radar_distance_delay_s(CP),
   )
-  stopping_lead_filter = StoppingLeadFilter()
+  casper_departure_eligible = (
+    CP.carFingerprint == CAR.HYUNDAI_CASPER and CP.openpilotLongitudinalControl
+    and not CP.pcmCruise and bool(CP.flags & HyundaiFlags.CAMERA_SCC)
+    and not bool(CP.flags & HyundaiFlags.CANFD)
+  )
+  stopping_lead_filter = StoppingLeadFilter(reuse_departure_evidence=casper_departure_eligible)
+  casper_diagnostics = (
+    CasperDiagnostics('planner', clock=time.monotonic_ns)
+    if casper_departure_eligible else None
+  )
 
   pm = messaging.PubMaster(['longitudinalPlan', 'driverAssistance', 'lateralPlan'])
   # One process owns both planners to avoid another ~100 MB Python runtime.
@@ -130,8 +172,14 @@ def main():
 
       # Apply after the fast overlay, which reconstructs vLead from vEgo+vRel.
       # Conditioning every ACC input path also covers model-clock fallbacks.
+      filter_input_radar_state = planner_sm['radarState']
+      fast_lead_mask = fast_result.lead_mask if fast_result is not None else 0
+      lead_mono_times = {
+        role: int(sm.logMonoTime['liveTracks' if fast_lead_mask & mask else 'radarState'])
+        for role, mask in (('leadOne', 1), ('leadTwo', 2))
+      }
       stopping_radar_state = stopping_lead_filter.update(
-        planner_sm['radarState'],
+        filter_input_radar_state,
         stopping=(
           CP.openpilotLongitudinalControl
           and sm['controlsState'].longControlState == car.CarControl.Actuators.LongControlState.stopping
@@ -141,6 +189,7 @@ def main():
         ),
         v_ego=sm['carState'].vEgo,
         mono_time_ns=sm.logMonoTime['liveTracks' if fast_result is not None and fast_result.lead_mask else 'radarState'],
+        lead_mono_times=lead_mono_times,
         valid=(
           sm.valid['radarState'] and sm.alive['radarState']
           and sm.valid['carState'] and sm.alive['carState']
@@ -151,7 +200,7 @@ def main():
 
       longitudinal_planner.update(planner_sm, carrot)
       planner_execution_time = time.monotonic() - planner_start
-      longitudinal_planner.publish(
+      plan_send = longitudinal_planner.publish(
         planner_sm,
         pm,
         carrot,
@@ -164,6 +213,11 @@ def main():
         fast_lead_reason=(fast_result.lead_one_reason if fast_result is not None else 'inactive'),
       )
       timings['longitudinal_ms'] = (time.monotonic() - planner_start) * 1000
+      if casper_diagnostics is not None:
+        casper_diagnostics.record(sm['carState'].vEgo, lambda: _casper_planner_snapshot(
+          sm, filter_input_radar_state, stopping_radar_state, stopping_lead_filter, plan_send,
+          lead_mono_times, fast_lead_mask, planning_trigger, trigger_mono_ns,
+        ))
 
     if sm.updated['modelV2']:
       lateral_start = time.monotonic()

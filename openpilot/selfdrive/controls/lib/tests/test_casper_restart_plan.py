@@ -233,6 +233,29 @@ class TestRealPlannerResetIntegration(unittest.TestCase):
                          0 if expected_reset else sm['selfdriveState'].casperRestartRequestMonoTime)
         self.assertEqual(planner.casper_prior_departure_ns, 0 if expected_reset else now - 50_000_000)
 
+  def test_published_departure_input_epoch_survives_native_message_roundtrip(self):
+    module = self.module
+    now = 2_000_000_000
+    cp = NS(carFingerprint=module.CAR.HYUNDAI_CASPER, flags=module.HyundaiFlags.CAMERA_SCC,
+            openpilotLongitudinalControl=True, pcmCruise=False)
+    with patch.object(module, 'LongitudinalMpc'), patch.object(module, 'Params'), \
+         patch.object(module, 'is_volkswagen_meb', return_value=False):
+      planner = module.LongitudinalPlanner(cp)
+    planner.casper_prior_departure_ns = now - 10_000_000
+    planner.mpc = NS(solve_time=0., source='lead0', a_change_cost=10., t_follow=1.2, desired_distance=5.)
+    carrot = NS(trafficStopModelLeadOffset=0., xState=NS(value=0), trafficState=NS(value=0),
+                events=NS(to_msg=lambda: []), myDrivingMode=NS(value=0))
+    sm = Messages(now)
+    sm.logMonoTime['modelV2'] = now - 50_000_000
+    sm.all_checks = lambda service_list: True
+    published = []
+    message = planner.publish(sm, NS(send=lambda name, value: published.append((name, value))), carrot)
+    self.assertIs(published[0][1], message)
+    self.assertEqual(published[0][0], 'longitudinalPlan')
+    with module.messaging.log.Event.from_bytes(message.to_bytes()) as decoded:
+      self.assertEqual(decoded.longitudinalPlan.casperDepartureInputsMonoTime, planner.casper_prior_departure_ns)
+      self.assertEqual(decoded.longitudinalPlan.casperRestartRequestMonoTime, 0)
+
 
 if __name__ == '__main__':
   unittest.main()

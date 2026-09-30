@@ -451,6 +451,7 @@ class LongitudinalPlanner:
 
     longitudinalPlan = plan_send.longitudinalPlan
     longitudinalPlan.casperRestartRequestMonoTime = self.casper_restart_request_ns
+    longitudinalPlan.casperDepartureInputsMonoTime = self.casper_prior_departure_ns
     longitudinalPlan.modelMonoTime = sm.logMonoTime['modelV2']
     longitudinalPlan.deprecated.radarStateMonoTime = sm.logMonoTime['radarState']
     longitudinalPlan.processingDelay = (plan_send.logMonoTime - sm.logMonoTime['modelV2']) / 1e9
@@ -495,3 +496,4 @@ class LongitudinalPlanner:
     longitudinalPlan.myDrivingMode = carrot.myDrivingMode.value
 
     pm.send('longitudinalPlan', plan_send)
+    return plan_send

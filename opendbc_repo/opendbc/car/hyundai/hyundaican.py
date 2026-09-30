@@ -154,7 +154,7 @@ def create_lfahda_mfc(packer, CC, blinking_signal):
   return packer.make_can_msg("LFAHDA_MFC", 0, values)
 
 def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_speed, stopping, long_override, suppress_casper_ev_fca, CS, soft_hold_mode,
-                            long_active=False, diagnostics=None, launch_jerk_upper=None):
+                            long_active=False, diagnostics=None, launch_jerk_upper=None, launch_jerk_diagnostic=None):
   from opendbc.car.hyundai.carcontroller import HyundaiJerk
   cruise_available = CS.out.cruiseState.available
   if CS.paddle_button_prev > 0:
@@ -252,7 +252,8 @@ def create_acc_commands_scc(packer, enabled, accel, jerk, idx, hud_control, set_
       upper = values["JerkUpperLimit"]
       diagnostics.record(CS.out.vEgo, lambda: scc_snapshot(
         CS, long_enabled, long_active, stopping, accel, long_override, hud_control, jerk,
-        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req))
+        upper, scc12_acc_mode, scc14_acc_mode, 0 if CS.scc12 is not None and casper_decel_stop else stop_req,
+        launch_snapshot=launch_jerk_diagnostic() if launch_jerk_diagnostic is not None else None))
 
   if CS.fca11 is not None and suppress_casper_ev_fca: # CASPER_EV의 경우 FCA11에서 fail이 간헐적 발생함.. 그냥막자.. 원인불명..
     values = suppress_casper_ev_fca11_fault(copy.copy(CS.fca11))

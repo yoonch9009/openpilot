@@ -182,6 +182,10 @@ class CarState(CarStateBase):
     self.scc14 = None
     self.lkas11 = None
     self.clu11 = None
+    self.casper_tcs13_feedback = {}
+    self.casper_tcs13_transitions_ns = {}
+    self.casper_raw_moving = False
+    self.casper_raw_motion_mono_ns = 0
 
     # for CANFD parsing
     self.scc_control = None
@@ -468,6 +472,14 @@ class CarState(CarStateBase):
     self.casper_brake_control_active = self.CP.carFingerprint == CAR.HYUNDAI_CASPER and casper_brake_control_active(cp)
     if self.CP.carFingerprint == CAR.HYUNDAI_CASPER:
       self.casper_tcs13_mono_ns = cp.ts_nanos.get("TCS13", {}).get("DCEnable", 0)
+      feedback = {name: cp.vl["TCS13"][name] for name in
+                  ("DCEnable", "BrakeLight", "TQI_SCC", "ACC_REQ", "DriverOverride", "ACCEnable")}
+      for name, value in feedback.items():
+        if name != "TQI_SCC" and self.casper_tcs13_feedback.get(name) != value:
+          self.casper_tcs13_transitions_ns[name] = self.casper_tcs13_mono_ns
+      if (self.casper_tcs13_feedback.get("TQI_SCC", 0) > 0) != (feedback["TQI_SCC"] > 0):
+        self.casper_tcs13_transitions_ns["TQI_SCC_positive"] = self.casper_tcs13_mono_ns
+      self.casper_tcs13_feedback = feedback
     self.is_metric = cp.vl["CLU11"]["CF_Clu_SPEED_UNIT"] == 0
     speed_conv = CV.KPH_TO_MS if self.is_metric else CV.MPH_TO_MS
 
@@ -486,6 +498,11 @@ class CarState(CarStateBase):
       cp.vl["WHL_SPD11"]["WHL_SPD_RR"],
     )
     ret.vEgoRaw = (ret.wheelSpeeds.fl + ret.wheelSpeeds.fr + ret.wheelSpeeds.rl + ret.wheelSpeeds.rr) / 4.
+    if self.CP.carFingerprint == CAR.HYUNDAI_CASPER:
+      raw_moving = ret.vEgoRaw >= .1
+      if raw_moving != self.casper_raw_moving:
+        self.casper_raw_motion_mono_ns = cp.ts_nanos.get("WHL_SPD11", {}).get("WHL_SPD_FL", 0)
+      self.casper_raw_moving = raw_moving
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
     ret.standstill = ret.wheelSpeeds.fl <= STANDSTILL_THRESHOLD and ret.wheelSpeeds.rr <= STANDSTILL_THRESHOLD
 

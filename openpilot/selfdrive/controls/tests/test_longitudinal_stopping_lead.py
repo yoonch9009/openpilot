@@ -18,10 +18,11 @@ def radar_state(*, distance=5.5, v_lead=0.05, v_rel=0.0, a_lead=0.0, j_lead=0.0,
   return state
 
 
-def update(guard, state=None, *, t=1.0, stopping=True, v_ego=0.05, valid=True):
+def update(guard, state=None, *, t=1.0, stopping=True, v_ego=0.05, valid=True, lead_mono_times=None):
   return guard.update(
     radar_state() if state is None else state,
     stopping=stopping, v_ego=v_ego, mono_time_ns=round(t * 1e9), valid=valid,
+    lead_mono_times=lead_mono_times,
   )
 
 
@@ -67,8 +68,9 @@ def test_fast_real_departure_restores_measured_kinematics_after_range_confirmati
   assert guard.held_mask == 0
 
 
-def test_slow_departure_accumulates_range_from_fixed_stop_position():
-  guard = StoppingLeadFilter()
+@pytest.mark.parametrize('reuse_evidence,expected_release', ((False, 1.1), (True, 1.0)))
+def test_slow_departure_accumulates_range_from_fixed_stop_position(reuse_evidence, expected_release):
+  guard = StoppingLeadFilter(reuse_departure_evidence=reuse_evidence)
   establish_stop(guard)
   first_release = None
   for index in range(1, 41):
@@ -78,7 +80,8 @@ def test_slow_departure_accumulates_range_from_fixed_stop_position():
     output = update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=1.2 + elapsed, v_ego=0.0)
     if output.leadOne.vLead > 0.0 and first_release is None:
       first_release = elapsed
-  assert first_release == pytest.approx(1.1)
+  # Casper can reuse the first bin's 500 ms of movement at the second bin.
+  assert first_release == pytest.approx(expected_release)
 
 
 def test_one_large_range_spike_does_not_confirm_departure():
@@ -186,3 +189,124 @@ def test_ten_centimeter_range_change_alone_does_not_release(v_lead, v_rel):
     output = update(guard, radar_state(distance=5.6, v_lead=v_lead, v_rel=v_rel), t=1.25 + index * 0.05)
     assert guard.held_mask == 1
     assert output.leadOne.vLead == 0.0
+
+
+@pytest.mark.parametrize('role', ('leadOne', 'leadTwo'))
+def test_two_range_steps_reuse_confirmed_movement_before_ten_centimeters(role):
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard, role=role)
+  for t in (1.25, 1.3):
+    assert getattr(update(guard, radar_state(distance=5.55, v_lead=0.1, v_rel=0.1, role=role), t=t), role).vLead == 0.0
+  source = radar_state(distance=5.6, v_lead=0.1, v_rel=0.1, role=role)
+  assert update(guard, source, t=1.35) is source
+  release = guard.snapshot()['leads'][role]['last_release']
+  assert release['anchor_distance'] == pytest.approx(5.5)
+  assert release['range_growth'] == pytest.approx(0.1)
+  assert release['first_motion_mono_ns'] == 1_250_000_000
+  assert release['gap_evidence_mono_ns'] == release['release_mono_ns'] == 1_350_000_000
+  assert release['release_reason'] == 'rangeMotionConfirmed'
+  update(guard, t=1.4, stopping=False)
+  assert guard.snapshot()['leads'][role]['last_release'] == release
+
+
+def test_positive_speed_noise_at_constant_gap_does_not_credit_a_later_range_jump():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard, v_lead=0.1, v_rel=0.1)
+  for index in range(20):
+    assert update(guard, radar_state(v_lead=0.1, v_rel=0.1), t=1.25 + index * 0.05).leadOne.vLead == 0.0
+  for t in (2.25, 2.3, 2.349):
+    assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=2.35).leadOne.vLead > 0.0
+  assert guard.snapshot()['leads']['leadOne']['last_release']['release_reason'] == 'gapConfirmed'
+
+
+def test_pre_threshold_range_rebound_cannot_reuse_earlier_movement():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard)
+  for t, distance in ((1.25, 5.55), (1.3, 5.55), (1.35, 5.5), (1.4, 5.6), (1.45, 5.6)):
+    assert update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=1.5).leadOne.vLead > 0.0
+
+
+def test_closing_range_above_ten_centimeters_resets_confirmation():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard)
+  for t, distance in ((1.25, 5.7), (1.3, 5.65), (1.35, 5.65), (1.4, 5.65)):
+    assert update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.65, v_lead=0.1, v_rel=0.1), t=1.45).leadOne.vLead > 0.0
+
+
+@pytest.mark.parametrize('v_lead,v_rel', ((0.0, 0.1), (0.1, 0.0), (0.1, -0.1)))
+def test_interrupted_motion_before_threshold_requires_new_confirmation(v_lead, v_rel):
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard)
+  assert update(guard, radar_state(distance=5.55, v_lead=0.1, v_rel=0.1), t=1.25).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.55, v_lead=v_lead, v_rel=v_rel), t=1.3).leadOne.vLead == 0.0
+  for t in (1.35, 1.4):
+    assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=1.45).leadOne.vLead > 0.0
+
+
+def test_pre_threshold_time_credit_only_counts_newer_role_measurements():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard)
+  for t in (1.25, 1.25, 1.2, 1.25):
+    assert update(guard, radar_state(distance=5.55, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=1.3).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=1.35).leadOne.vLead > 0.0
+
+
+def test_refreshing_one_role_does_not_confirm_old_measurements_of_the_other():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+
+  def observe(t, one, two, two_time=None):
+    state = radar_state(distance=one, v_lead=0.1, v_rel=0.1)
+    state.leadTwo = radar_state(distance=two, v_lead=0.1, v_rel=0.1, track_id=43, role='leadTwo').leadTwo
+    return update(guard, state, t=t, lead_mono_times={
+      'leadOne': round(t * 1e9), 'leadTwo': round((t if two_time is None else two_time) * 1e9),
+    })
+
+  for index in range(5):
+    observe(1.0 + index * 0.05, 5.5, 5.5)
+  observe(1.25, 5.55, 5.55, 1.2)
+  observe(1.3, 5.55, 5.6, 1.2)
+  output = observe(1.35, 5.6, 5.6, 1.25)
+  assert output.leadOne.vLead > 0.0
+  assert output.leadTwo.vLead == 0.0
+  assert guard.snapshot()['leads']['leadTwo']['evidence']['first_motion_mono_ns'] == 1_250_000_000
+  for t, two_time in ((1.4, 1.25), (1.45, 1.3)):
+    assert observe(t, 5.65, 5.6, two_time).leadTwo.vLead == 0.0
+  assert observe(1.5, 5.7, 5.6, 1.35).leadTwo.vLead > 0.0
+
+
+def test_new_track_does_not_inherit_confirmed_movement():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  establish_stop(guard)
+  update(guard, radar_state(distance=5.55, v_lead=0.1, v_rel=0.1), t=1.25)
+  replacement = radar_state(distance=5.6, v_lead=0.1, v_rel=0.1, track_id=43)
+  assert update(guard, replacement, t=1.3) is replacement
+  assert guard.snapshot()['leads']['leadOne']['evidence']['first_motion_mono_ns'] == 0
+
+
+def test_cold_filter_does_not_hold_an_already_opening_gap():
+  guard = StoppingLeadFilter(reuse_departure_evidence=True)
+  for index in range(6):
+    source = radar_state(distance=5.5 + index * 0.05, v_lead=0.1, v_rel=0.1)
+    assert update(guard, source, t=1.0 + index * 0.05) is source
+
+
+def test_default_filter_keeps_full_confirmation_after_ten_centimeters_despite_prior_movement():
+  guard = StoppingLeadFilter()
+  establish_stop(guard)
+  for t, distance in ((1.25, 5.55), (1.3, 5.55), (1.35, 5.6), (1.4, 5.6)):
+    assert update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.6, v_lead=0.1, v_rel=0.1), t=1.45).leadOne.vLead > 0.0
+  assert guard.snapshot()['leads']['leadOne']['last_release']['release_reason'] == 'gapConfirmed'
+
+
+def test_default_filter_preserves_existing_above_threshold_range_confirmation():
+  guard = StoppingLeadFilter()
+  establish_stop(guard)
+  for t, distance in ((1.25, 5.7), (1.3, 5.65)):
+    assert update(guard, radar_state(distance=distance, v_lead=0.1, v_rel=0.1), t=t).leadOne.vLead == 0.0
+  assert update(guard, radar_state(distance=5.65, v_lead=0.1, v_rel=0.1), t=1.35).leadOne.vLead > 0.0

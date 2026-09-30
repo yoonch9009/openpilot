@@ -1,13 +1,13 @@
 # Casper departure diagnostics
 
-The diagnostic records are observations. The Casper mode-2 handoff trial and
-jerk-floor trial were withdrawn. The current restart uses the normal selfdrived
+The diagnostic records are observations. The Casper mode-2 handoff trial was
+withdrawn. The current restart uses the normal selfdrived
 cancel/enable event path so LongControl and the planner see an actual OFF period.
 The diagnostic producer itself does not supply control inputs.
 
 The gasoline HYUNDAI_CASPER emits structured `logMessage` records with
 `event=casper_departure_diagnostic`, `schema=1`. The producers are `controlsd`,
-`scc` and `restart`. Each producer is limited to 10 Hz below 2 m/s and for five seconds
+`scc`, `restart` and `planner`. Each producer is limited to 10 Hz below 2 m/s and for five seconds
 after leaving that speed range. The existing logmessaged nonblocking IPC path
 is used; control processes do not write diagnostic files. Capture is best
 effort. Sequence gaps can indicate lost records; diagnostic_errors counts
@@ -20,6 +20,11 @@ contained snapshot/transport exceptions, not silent IPC drops.
    reason. SCC snapshots record pre-packing mode and requests. The old
    `handoff_active` field stays false for compatibility with prior recordings.
    DCEnable is not brake pressure.
+   `res_held`, `res_release_ns`, `res_plan_ready` and
+   `departure_inputs_mono_ns` distinguish a held RES button from the fresh,
+   normally engaged departure solve needed after release. Empty buttonEvents
+   is not a release event. Already-engaged waiting RES operations preserve
+   preparation; other buttons, pedals and inputs during owned OFF/ON abort it.
 2. **Lead consistency:** Control snapshots contain plan hasLead, current radar
    lead and transmitted HUD lead fields, alongside service publication times,
    validity and alive flags. These are publication times, not sensor capture
@@ -34,20 +39,49 @@ contained snapshot/transport exceptions, not silent IPC drops.
    `launch_accel_correction` records the bounded post-reenable tracking correction.
    Confirm final quantized transmitted values against original CAN frames;
    a pre-packing record is not an ECU acceptance acknowledgement.
+   SCC `launch_jerk` contains the actual helper stage, pause/clear reason,
+   absolute deadlines, input age and current health checks. The historical
+   top-level `checks`/`blocked_by` are labelled
+   `checks_scope=legacy_standstill_trial`; they do not describe launch-jerk
+   eligibility. `brake_feedback`, `feedback_transitions_mono_ns` and
+   `raw_motion_transition_mono_ns` retain received TCS/wheel transitions.
+   TQI_SCC is a CAN signal, not measured engine torque.
+5. **Detection versus planning:** Planner records contain the filter's actual
+   input leads (after any fast overlay), per-role observation time, range
+   evidence and release reason/time, followed by the published plan's exact
+   timestamp, target, shouldStop and processing delay. These separate filter
+   release from the subsequent MPC departure decision without changing the
+   recorded raw radar or asserting a physical front-car departure time.
 
 Only gasoline Casper with openpilot longitudinal control requests one automatic
 CANCEL/ENABLE episode after a genuine following stop and confirmed departing
-lead. Both carControl and controlsState must acknowledge OFF; after 550ms OFF,
-a newer plan received by controlsd is required before requesting enable through
+lead. Both carControl and controlsState must acknowledge OFF; there is no fixed
+OFF dwell. A newer positive, nonstopping plan with the exact accepted restart
+identity must be consumed by controlsd before requesting enable through
 the normal no-entry checks. A real driver cancel, pedal, stale input, replaced
 lead or error invalidates the owned episode and cannot be automatically undone.
 Stock longitudinal and other cars are excluded. It remains a vehicle experiment.
 
-For three seconds after stopped re-engagement, a moving Casper can recover at
-most 0.2m/s² of acceleration lost to negative velocity error, with a 0.5m/s³
+For three seconds from first movement after stopped re-engagement, a moving Casper can recover at
+most 0.4m/s² of acceleration lost to negative velocity error, with a 1.5m/s³
 rise limit. This is allowed only below 3m/s, behind a departing lead, and when
 estimated acceleration is below the positive plan target. It never exceeds the
 plan target or existing actuator limits, and never boosts a stationary vehicle.
+
+The classic camera-SCC gasoline Casper also has a separate post-motion upper
+jerk allowance, bounded by 1.0m/s³ without reducing a higher original allowance.
+It requires fresh feedback, a departing valid lead, positive target/request,
+nonnegative planned jerk and estimated acceleration below the requested target.
+A negative planned jerk temporarily suppresses this allowance and clears its
+ramp value; it does not extend the two-second motion wait or the three-second
+moving window. Genuine stopping, nonpositive requests and invalid inputs still
+end the episode. Brake release is feedback eligibility, not a command from this
+helper to release the brakes.
+
+Stopped-lead conditioning still requires at least 10cm of opening range and
+100ms of fresh confirmation. Multiple monotonic range increases with positive
+lead motion can contribute confirmation before the final distance threshold;
+a single range spike, constant range or rebound cannot use this earlier credit.
 
 ## Extraction
 
@@ -70,13 +104,23 @@ mono_ns (producer snapshot) distinctly when aligning diagnostic events.
 
 ## Validation boundary
 
-Since 2026-09-28 restart records include the exact lead_departing confirmation
-input, departure_ready, should_stop, confirm_ns and off_dwell_ns. Separate lead
-confirmation from planner permission and OFF acknowledgment when measuring
-latency. Snapshot rate is still 10Hz; these fields do not prove ECU acceptance.
+Restart records include departure_ready, should_stop, off_dwell_ns, the owned
+request/acknowledgment times and the RES input/plan-readiness fields. Separate
+filter confirmation from planner permission and OFF acknowledgment when
+measuring latency. Snapshot rate is still 10Hz; these fields do not prove ECU
+acceptance.
 
 Tests compare every generated CAN byte with diagnostics enabled/disabled and
 with a failing sink. They cover rate limiting, feedback/lead snapshots, parsing,
 sub-sample control transitions, repeated stopping and incomplete motion windows.
 Software and synthetic-log tests cannot verify ESC internals or vehicle restart
 behavior. Actual driving evidence is still required.
+
+The combined 2026-09-30 change passed 1,202 native tests and 318 subtests across
+36 files. Coverage includes the recorded 18:33 RES sequence, held/released
+buttons, stale or unconsumed plans, cancellation and pedal intervention,
+negative-jerk pause/recovery/deadlines, unchanged CAN bytes with failed logging,
+and Casper-only range-evidence reuse. The wider Hyundai firmware/fingerprint
+data test has the same 16 failing entries on the unchanged b3da211 baseline;
+these were reproduced separately and are outside this change. These software
+results do not establish actual vehicle response improvements.

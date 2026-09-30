@@ -658,7 +658,25 @@ class SelfdriveD:
     blocked = any(self.events.contains(t) for t in
                   (ET.USER_DISABLE, ET.IMMEDIATE_DISABLE, ET.SOFT_DISABLE, ET.NO_ENTRY,
                    ET.PRE_ENABLE, ET.OVERRIDE_LONGITUDINAL))
-    user_input = bool(CS.buttonEvents) or CS.brakePressed or CS.gasPressed
+    stationary = math.isfinite(CS.vEgo) and abs(CS.vEgo) < .1
+    button_inputs = [(str(event.type), bool(event.pressed)) for event in CS.buttonEvents]
+    user_input = restart.classify_input(
+      now_ns, enabled=self.enabled, stationary=stationary,
+      pedal=CS.brakePressed or CS.gasPressed, buttons=button_inputs,
+    )
+    res_plan_ready = not restart.res_held
+    if restart.res_release_ns:
+      plan_time = self.sm.logMonoTime['longitudinalPlan']
+      res_plan_ready = (res_plan_ready and not button_inputs and
+                        plan_time > restart.res_release_ns and
+                        plan.casperDepartureInputsMonoTime > restart.res_release_ns and
+                        controls.longitudinalPlanMonoTime == plan_time and
+                        self.sm.logMonoTime['controlsState'] > plan_time and
+                        self.sm.logMonoTime['carControl'] > plan_time and
+                        self.casper_cs_mono_ns > restart.res_release_ns and
+                        math.isfinite(plan.aTarget) and plan.aTarget > 0)
+      if res_plan_ready:
+        restart.res_wait_reason = ''
     # Do not add a fixed gap threshold to the planner's departure permission.
     # Nonpositive/nonfinite distance is invalid, not evidence of a moving lead.
     lead_ok = (lead.status and math.isfinite(lead.dRel) and math.isfinite(lead.vRel)
@@ -687,7 +705,7 @@ class SelfdriveD:
       healthy = healthy and lead_not_closing
     stationary = math.isfinite(CS.vEgo) and abs(CS.vEgo) < .1
     stopping = cc.longActive and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.stopping and cc.actuators.accel < 0
-    departure = (cc.longActive and not plan.shouldStop and plan.hasLead and lead_not_closing
+    departure = (res_plan_ready and cc.longActive and not plan.shouldStop and plan.hasLead and lead_not_closing
                  and cc.actuators.longControlState == car.CarControl.Actuators.LongControlState.pid
                  and cc.actuators.accel > 0)
     off_ack = (not cc.enabled and not cc.longActive and abs(cc.actuators.accel) < .001
@@ -716,6 +734,10 @@ class SelfdriveD:
     self.casper_restart_log.record(CS.vEgo, lambda: dict(
       phase=restart.phase, reason=restart.reason, action=action, enabled=self.enabled,
       healthy=healthy, user_input=user_input, off_ack=off_ack, plan_after_off=plan_after_off,
+      button_inputs=button_inputs, res_held=sorted(restart.res_held),
+      res_release_ns=restart.res_release_ns, res_plan_ready=res_plan_ready,
+      departure_inputs_mono_ns=int(plan.casperDepartureInputsMonoTime),
+      res_wait_reason=restart.res_wait_reason,
         car_state_mono_ns=self.casper_cs_mono_ns, lead_continuous=lead_continuous,
         lead_valid=lead_ok, lead_not_closing=lead_not_closing,
         departure_ready=departure, should_stop=bool(plan.shouldStop),

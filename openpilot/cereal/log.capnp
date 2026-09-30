@@ -1251,6 +1251,9 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   cruiseCoastingPercent @63 :UInt8;
   # Echo only when the bounded owned-restart planner continuity was accepted.
   casperRestartRequestMonoTime @64 :UInt64;
+  # Input epoch of the last normally engaged positive departure solve. A RES
+  # release must be followed by a new eligible solve before an owned restart.
+  casperDepartureInputsMonoTime @65 :UInt64;
 
   solverExecutionTime @35 :Float32;
 

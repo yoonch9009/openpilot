@@ -14,6 +14,29 @@ class CasperCruiseRestart:
     self.resume_ns = 0
     self.last_ns = 0
     self.reason = ''
+    self.res_held = set()
+    self.res_release_ns = 0
+    self.res_wait_reason = ''
+
+  def classify_input(self, now_ns, *, enabled, stationary, pedal, buttons):
+    """Only already-engaged waiting RES edges are non-cancelling input."""
+    waiting = enabled and stationary and self.phase in ('idle', 'holding')
+    allowed = {'accelCruise', 'resumeCruise'}
+    if pedal or (buttons and (not waiting or any(name not in allowed for name, _ in buttons))):
+      self.res_wait_reason = 'external_input'
+      return True
+    if waiting:
+      for name, pressed in buttons:
+        if pressed:
+          self.res_held.add(name)
+          self.res_release_ns = 0
+        else:
+          self.res_held.discard(name)
+          # Receipt time is deliberately conservative: the next plan must have
+          # been produced after this release reached selfdrived.
+          self.res_release_ns = now_ns
+      self.res_wait_reason = 'res_held' if self.res_held else ('post_res_plan' if self.res_release_ns else '')
+    return False
 
   def update(self, now_ns, *, enabled, healthy, stationary, stopping, departure,
              off_ack, plan_after_off, user_input, moving, resume_ready=True, active_ack=False):

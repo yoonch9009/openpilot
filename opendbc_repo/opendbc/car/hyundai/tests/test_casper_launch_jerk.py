@@ -48,14 +48,100 @@ class TestCasperLaunchJerk(unittest.TestCase):
 
   def test_invalid_input_cancels_window(self):
     for change in (dict(healthy=False), dict(feedback_fresh=False), dict(lead_valid=False),
-                   dict(lead_distance=1.9), dict(lead_relative_speed=0), dict(planned_jerk=-.01),
-                   dict(request=-.1), dict(stopping=True), dict(speed=float('nan'))):
+                   dict(lead_distance=1.9), dict(lead_relative_speed=.2), dict(planned_jerk=float('nan')),
+                   dict(target=0), dict(request=0), dict(request=-.1), dict(stopping=True), dict(speed=float('nan'))):
       with self.subTest(change=change):
         self.setUp()
         self.restart()
         self.assertGreater(self.step(), .5)
-        self.assertEqual(self.step(**change), .5)
+        self.assertEqual(self.step(**{'planned_jerk': -.007815, **change}), .5)
+        self.assertIsNone(self.helper.wait_until)
+        self.assertEqual(self.helper.diagnostic_snapshot()['last_clear_time'], self.now)
         self.assertEqual(self.step(), .5)
+
+  def test_negative_jerk_before_motion_preserves_wait(self):
+    self.restart()
+    wait_until = self.helper.wait_until
+    for _ in range(10):
+      self.assertEqual(self.step(speed=0, planned_jerk=-.007815), .5)
+      self.assertEqual(self.helper.wait_until, wait_until)
+      self.assertIsNone(self.helper.end_time)
+      self.assertEqual(self.helper.extra, 0.)
+    self.assertGreater(self.step(), .5)
+    self.assertAlmostEqual(self.helper.end_time, self.now + 3.)
+
+  def test_negative_jerk_on_first_motion_starts_absolute_deadline(self):
+    self.restart()
+    self.assertEqual(self.step(speed=.1, planned_jerk=-.007815), .5)
+    end_time = self.now + 3.
+    self.assertAlmostEqual(self.helper.end_time, end_time)
+    self.assertEqual(self.helper.diagnostic_snapshot()['stage'], 'paused')
+    for _ in range(20):
+      self.assertEqual(self.step(planned_jerk=-.01), .5)
+    self.assertEqual(self.helper.end_time, end_time)
+    self.assertGreater(self.step(planned_jerk=0), .5)
+    self.assertEqual(self.helper.end_time, end_time)
+
+  def test_recovery_restarts_extra_slew_at_zero(self):
+    self.restart()
+    for _ in range(20):
+      self.step()
+    self.assertGreater(self.helper.extra, .3)
+    end_time = self.helper.end_time
+    self.assertEqual(self.step(planned_jerk=-.007815), .5)
+    self.assertEqual(self.helper.extra, 0.)
+    paused_at = self.now
+    for _ in range(5):
+      self.assertEqual(self.step(planned_jerk=-.007815, original=2.), 2.)
+    snapshot = self.helper.diagnostic_snapshot()
+    self.assertEqual(snapshot['last_pause_time'], paused_at)
+    self.assertEqual(snapshot['last_pause_reason'], 'planned_jerk_negative')
+    self.assertAlmostEqual(self.step(planned_jerk=0), .52)
+    self.assertAlmostEqual(self.step(), .54)
+    self.assertEqual(self.helper.end_time, end_time)
+
+  def test_pausing_does_not_extend_wait_or_motion_deadlines(self):
+    self.restart()
+    wait_until = self.helper.wait_until
+    while self.now < wait_until + .02:
+      self.assertEqual(self.step(speed=0, planned_jerk=-.007815), .5)
+    self.assertIsNone(self.helper.wait_until)
+    self.assertEqual(self.helper.diagnostic_snapshot()['last_clear_reason'], 'wait_timeout')
+    self.assertEqual(self.step(), .5)
+
+    self.setUp()
+    self.restart()
+    self.step(planned_jerk=-.007815)
+    end_time = self.helper.end_time
+    while self.now < end_time + .02:
+      self.assertEqual(self.step(planned_jerk=-.007815), .5)
+    self.assertIsNone(self.helper.end_time)
+    self.assertEqual(self.helper.diagnostic_snapshot()['last_clear_reason'], 'moving_timeout')
+    self.assertEqual(self.step(), .5)
+
+  def test_recovery_requires_brake_release_and_positive_request(self):
+    self.restart()
+    self.step()
+    self.assertEqual(self.step(planned_jerk=-.007815, brake_released=False), .5)
+    self.assertEqual(self.step(planned_jerk=0, brake_released=False), .5)
+    self.assertEqual(self.helper.diagnostic_snapshot()['reason'], 'brake_control_active')
+    self.assertEqual(self.helper.extra, 0.)
+    self.assertAlmostEqual(self.step(planned_jerk=0), .52)
+    self.assertEqual(self.step(planned_jerk=-.007815, request=-.1), .5)
+    self.assertEqual(self.helper.diagnostic_snapshot()['last_clear_reason'], 'nonpositive_request')
+    self.assertEqual(self.step(), .5)
+
+  def test_diagnostic_snapshot_is_detached_and_does_not_change_state(self):
+    self.restart()
+    self.step(planned_jerk=-.007815)
+    before = vars(self.helper).copy()
+    snapshot = self.helper.diagnostic_snapshot()
+    self.assertEqual(snapshot['last_transition_time'], self.now)
+    self.assertEqual(snapshot['last_pause_time'], self.now)
+    snapshot['extra'] = 100.
+    snapshot['stage'] = 'other'
+    self.assertEqual(vars(self.helper), before)
+    self.assertAlmostEqual(self.step(), .52)
 
   def test_no_boost_with_brake_or_no_deficit_or_high_speed(self):
     self.restart()

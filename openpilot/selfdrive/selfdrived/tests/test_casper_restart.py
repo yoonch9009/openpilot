@@ -186,6 +186,38 @@ class TestCasperCruiseRestart(unittest.TestCase):
     self.assertEqual(episode.run(100), [])
 
 
+class TestWaitingResInput(unittest.TestCase):
+  def test_1833_res_press_and_release_keeps_holding(self):
+    episode = Episode()
+    episode.run(110)
+    helper = episode.controller
+    classify = lambda buttons: helper.classify_input(episode.now, enabled=True, stationary=True, pedal=False, buttons=buttons)
+    self.assertFalse(classify([('accelCruise', True)]))
+    for _ in range(52):
+      self.assertFalse(classify([]))
+      self.assertEqual(helper.res_held, {'accelCruise'})
+      self.assertIsNone(episode.tick(departure=False))
+    self.assertFalse(classify([('accelCruise', False)]))
+    self.assertFalse(helper.res_held)
+    self.assertEqual(helper.res_release_ns, episode.now)
+    self.assertEqual(helper.phase, 'holding')
+    self.assertEqual(episode.tick(departure=True, stopping=False), 'off')
+
+  def test_other_input_and_owned_phase_take_priority(self):
+    for phase in ('idle', 'holding', 'off', 'resuming', 'spent'):
+      for button in ('cancel', 'mainCruise', 'gapAdjustCruise', 'unknown'):
+        helper = CasperCruiseRestart()
+        helper.phase = phase
+        self.assertTrue(helper.classify_input(1, enabled=True, stationary=True, pedal=False,
+                                             buttons=[('accelCruise', True), (button, True)]))
+      if phase not in ('idle', 'holding'):
+        self.assertTrue(helper.classify_input(2, enabled=True, stationary=True, pedal=False,
+                                             buttons=[('accelCruise', False)]))
+    helper = CasperCruiseRestart()
+    self.assertTrue(helper.classify_input(1, enabled=True, stationary=True, pedal=True,
+                                         buttons=[('resumeCruise', True)]))
+
+
 class TestRestartWithRealStateMachine(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
